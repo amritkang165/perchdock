@@ -531,9 +531,9 @@ final class DockController {
 
         // Hovering a group (with an app) or the Trash (with anything pinned) targets
         // it; the layout freezes meanwhile so the target doesn't slide away.
-        let intDropTarget = blnOutside ? nil : dropTarget(forDragged: objDragged, objDrag: objDrag, fltMain: fltMain, fltCross: fltCross)
-        objState.objDrag?.intDropTarget = intDropTarget
-        if intDropTarget == nil {
+        let intCandidate = blnOutside ? nil : dropTarget(forDragged: objDragged, objDrag: objDrag, fltMain: fltMain, fltCross: fltCross)
+        updateDropTarget(intCandidate)
+        if intCandidate == nil {
             objState.objDrag?.intTargetSlot = allowedSlot(for: objDragged, intIndex: intPressIndex,
                                                          intSlot: objGeometry.dropSlot(atMain: fltMain, intDragIndex: intPressIndex))
         }
@@ -560,6 +560,9 @@ final class DockController {
             switch objItem.enmKind {
             case .group where objDragged.blnIsApp:
                 return intIndex
+            // App onto app: makes a new group of the two.
+            case .app where objDragged.blnIsApp:
+                return intIndex
             case .trash where objDragged.blnIsPinned:
                 return intIndex
             default:
@@ -567,6 +570,44 @@ final class DockController {
             }
         }
         return nil
+    }
+
+    /// How long to hold an app over another app before they'd form a group, so
+    /// sweeping past icons while reordering doesn't group them by accident.
+    private static let objGroupDwell: Duration = .milliseconds(300)
+    /// Pending app-onto-app target, armed after `objGroupDwell`.
+    private var intPendingGroupTarget: Int?
+    private var objGroupDwellTask: Task<Void, Never>?
+
+    /// Applies the item under the cursor as the drop target. Groups and the Trash
+    /// take effect at once; another app only after a short hold.
+    /// - Parameter intCandidate: Accepting item under the cursor, or `nil`.
+    private func updateDropTarget(_ intCandidate: Int?) {
+        let blnIsApp = intCandidate.flatMap { objTracker.arrObjItems[safe: $0] }?.blnIsApp ?? false
+
+        guard blnIsApp, let intCandidate else {
+            cancelGroupDwell()
+            objState.objDrag?.intDropTarget = intCandidate
+            return
+        }
+        // Same app as before: already armed or still waiting.
+        guard intPendingGroupTarget != intCandidate else { return }
+
+        cancelGroupDwell()
+        objState.objDrag?.intDropTarget = nil
+        intPendingGroupTarget = intCandidate
+        objGroupDwellTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.objGroupDwell)
+            guard !Task.isCancelled, let self, self.intPendingGroupTarget == intCandidate, self.objState.objDrag != nil else { return }
+            self.objState.objDrag?.intDropTarget = intCandidate
+        }
+    }
+
+    /// Forgets a pending app-onto-app target.
+    private func cancelGroupDwell() {
+        objGroupDwellTask?.cancel()
+        objGroupDwellTask = nil
+        intPendingGroupTarget = nil
     }
 
     /// Clamps a drop slot to where the item may go: pinned items stay in the pinned
@@ -605,6 +646,7 @@ final class DockController {
     /// Commits a drag: removes the item, or moves it to the target slot.
     /// - Parameter objDrag: The finished drag.
     private func finishDrag(_ objDrag: DockDrag) {
+        cancelGroupDwell()
         guard let objItem = objTracker.arrObjItems[safe: objDrag.intIndex] else {
             objState.objDrag = nil
             return
@@ -617,12 +659,17 @@ final class DockController {
             return
         }
 
-        // Dropped onto a group (joins it) or the Trash (leaves the dock).
+        // Dropped onto a group (joins it), another app (the two become a group)
+        // or the Trash (leaves the dock).
         if let intTarget = objDrag.intDropTarget, let objTarget = objTracker.arrObjItems[safe: intTarget] {
             objDragIcon.vanish()
             objState.objDrag = nil
             switch objTarget.enmKind {
             case .group(let strGroupId, _):
+                objTracker.add(objItem.strBundleId, toGroup: strGroupId)
+            case .app:
+                // The group takes the target app's place.
+                let strGroupId = objTracker.createGroup(with: objTarget.strBundleId)
                 objTracker.add(objItem.strBundleId, toGroup: strGroupId)
             case .trash:
                 objTracker.unpin(objItem.strBundleId)

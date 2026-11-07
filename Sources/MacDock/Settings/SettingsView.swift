@@ -92,7 +92,7 @@ private struct AppearanceTab: View {
                 Toggle("Show minimized windows in the dock", isOn: $objSettings.blnShowMinimized)
                 Toggle("Show Trash", isOn: $objSettings.blnShowTrash)
             } footer: {
-                Text("Right-click the dock to add dividers or folders. Right-click an app to start a group, or drag an app onto a group to add it.")
+                Text("Right-click the dock to add dividers or folders. Hold an app over another app to make a group, or drop it on a group to add it.")
                     .foregroundStyle(.secondary)
             }
         }
