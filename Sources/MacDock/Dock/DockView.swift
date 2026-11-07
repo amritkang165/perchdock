@@ -182,6 +182,7 @@ struct DockView: View {
                         objNowPlaying: objNowPlaying,
                         objVolume: objVolume,
                         fltIconSize: objGeometry.fltIconSize,
+                        blnVertical: objGeometry.enmPosition.blnIsVertical,
                         enmScrub: objState.enmWidgetScrub,
                         enmHovered: objState.enmWidgetHover
                     )

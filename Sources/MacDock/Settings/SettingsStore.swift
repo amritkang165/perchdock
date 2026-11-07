@@ -63,7 +63,7 @@ enum IndicatorStyle: String, CaseIterable, Identifiable {
 enum NowPlayingSize: String, CaseIterable, Identifiable {
     /// One icon: artwork with a state glyph (click to play/pause).
     case small
-    /// A wide tile with transport buttons, seek bar and volume (bottom dock only).
+    /// A tile with transport buttons, seek bar and volume (wide at the bottom, tall at the sides).
     case large
 
     var id: String { rawValue }
@@ -323,8 +323,8 @@ final class SettingsStore {
     /// Small (icon) or large (controls) Now Playing widget.
     var enmNowPlayingSize: NowPlayingSize { didSet { objDefaults.set(enmNowPlayingSize.rawValue, forKey: Key.strNowPlayingSize) } }
 
-    /// Whether the large Now Playing tile is actually used (it only fits a bottom dock).
-    var blnUsesLargeNowPlaying: Bool { enmNowPlayingSize == .large && !enmPosition.blnIsVertical }
+    /// Whether the large Now Playing tile is used (wide on a bottom dock, tall on a side dock).
+    var blnUsesLargeNowPlaying: Bool { enmNowPlayingSize == .large }
 
     /// Color wash over the glass.
     var enmTint: DockTint { didSet { objDefaults.set(enmTint.rawValue, forKey: Key.strTint) } }

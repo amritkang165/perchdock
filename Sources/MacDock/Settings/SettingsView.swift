@@ -109,7 +109,7 @@ private struct AppearanceTab: View {
             } header: {
                 Text("Widgets")
             } footer: {
-                Text("Now Playing appears while music or a video is playing or paused. Small is a single tile: click to play or pause, right-click to skip. Large adds previous/next, a seek bar, mute and volume (on a dock at the bottom; side docks use Small). Battery shows the charge; click it for Battery settings.")
+                Text("Now Playing appears while music or a video is playing or paused. Small is a single tile: click to play or pause, right-click to skip. Large adds previous/next, a seek bar, mute and volume (wide at the bottom, tall on a side dock). Battery shows the charge; click it for Battery settings.")
                     .foregroundStyle(.secondary)
             }
         }

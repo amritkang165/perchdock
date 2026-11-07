@@ -75,8 +75,13 @@ struct DockGeometry {
         return fltIconSize
     }
 
-    /// Width of a wide tile (the large Now Playing widget).
-    var fltWideWidth: CGFloat { NowPlayingLargeLayout(fltIconSize: fltIconSize).fltWidth }
+    /// Length along the bar of a wide tile (the large Now Playing widget; tall on side docks).
+    var fltWideWidth: CGFloat { nowPlayingLayout.fltMainLength }
+
+    /// Layout of the large Now Playing tile for this dock's size and orientation.
+    var nowPlayingLayout: NowPlayingLargeLayout {
+        NowPlayingLargeLayout(fltIconSize: fltIconSize, blnVertical: enmPosition.blnIsVertical)
+    }
 
     /// Whether an item keeps its size under the cursor (dividers and wide tiles).
     /// - Parameter intIndex: Item index.

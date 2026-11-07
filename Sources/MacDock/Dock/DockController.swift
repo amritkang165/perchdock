@@ -426,7 +426,8 @@ final class DockController {
         guard objSettings.blnShowLabels, blnShown, !objPicker.blnIsVisible, !objGrid.blnIsVisible, objState.objDrag == nil,
               let intIndex = objState.intHoveredIndex,
               let objItem = objTracker.arrObjItems[safe: intIndex], !objItem.blnIsDivider,
-              objGeometry.arrBlnWide[safe: intIndex] != true else {
+              // The wide tile shows its own title; the tall one relies on the label.
+              objGeometry.arrBlnWide[safe: intIndex] != true || objSettings.enmPosition.blnIsVertical else {
             objHoverLabel.hide()
             return
         }
@@ -925,25 +926,31 @@ final class DockController {
 
     // MARK: - Large Now Playing tile
 
-    /// Where the large Now Playing tile sits right now, if it's in the dock.
-    /// - Returns: Tile layout, its leading main coordinate and its far-from-edge cross coordinate.
-    private func largeTileFrame() -> (objLayout: NowPlayingLargeLayout, fltStartMain: CGFloat, fltTopCross: CGFloat)? {
-        let objGeometry = self.objGeometry
-        guard let intIndex = objGeometry.arrBlnWide.firstIndex(of: true) else { return nil }
-        let objLayout = NowPlayingLargeLayout(fltIconSize: objGeometry.fltIconSize)
-        let fltCenter = objGeometry.layout(mouseMain: objState.fltMouseMain).arrFltCenters[safe: intIndex]
-            ?? objGeometry.baseCenter(intIndex)
-        let fltTopCross = objGeometry.iconCross(forSize: objGeometry.fltIconSize) + objGeometry.fltIconSize / 2
-        return (objLayout, fltCenter - objLayout.fltWidth / 2, fltTopCross)
-    }
-
-    /// Converts a panel point into the large tile's local coordinates (top-left origin).
+    /// Converts a panel point into the large Now Playing tile's local coordinates
+    /// (top-left origin, screen orientation), if the tile is in the dock.
     /// - Parameter objPoint: Panel-local point.
     /// - Returns: Tile layout and local point, or `nil` without a large tile.
     private func largeTileLocal(_ objPoint: CGPoint) -> (objLayout: NowPlayingLargeLayout, objLocal: CGPoint)? {
-        guard let objFrame = largeTileFrame() else { return nil }
+        let objGeometry = self.objGeometry
+        guard let intIndex = objGeometry.arrBlnWide.firstIndex(of: true) else { return nil }
+        let objLayout = objGeometry.nowPlayingLayout
+        let fltCenter = objGeometry.layout(mouseMain: objState.fltMouseMain).arrFltCenters[safe: intIndex]
+            ?? objGeometry.baseCenter(intIndex)
+        let fltStartMain = fltCenter - objLayout.fltMainLength / 2
+        // The tile spans one icon across the bar, centered on the icon row.
+        let fltIconCross = objGeometry.iconCross(forSize: objGeometry.fltIconSize)
+        let fltNearCross = fltIconCross - objGeometry.fltIconSize / 2
+        let fltFarCross = fltIconCross + objGeometry.fltIconSize / 2
+
         let (fltMain, fltCross) = objGeometry.mainCross(fromPanelPoint: objPoint)
-        return (objFrame.objLayout, CGPoint(x: fltMain - objFrame.fltStartMain, y: objFrame.fltTopCross - fltCross))
+        let objLocal: CGPoint = switch objGeometry.enmPosition {
+        // Main runs left→right; cross grows upward (away from the bottom edge).
+        case .bottom: CGPoint(x: fltMain - fltStartMain, y: fltFarCross - fltCross)
+        // Main runs top→bottom; cross grows rightward on the left edge, leftward on the right.
+        case .left: CGPoint(x: fltCross - fltNearCross, y: fltMain - fltStartMain)
+        case .right: CGPoint(x: fltFarCross - fltCross, y: fltMain - fltStartMain)
+        }
+        return (objLayout, objLocal)
     }
 
     /// Control of the large Now Playing tile under a panel point.
@@ -983,9 +990,9 @@ final class DockController {
         guard let (objLayout, objLocal) = largeTileLocal(objPoint) else { return }
         switch enmControl {
         case .seek:
-            objState.enmWidgetScrub = .seek(objLayout.fraction(of: objLocal.x, in: objLayout.objSeekBar))
+            objState.enmWidgetScrub = .seek(objLayout.seekFraction(at: objLocal))
         case .volume:
-            let fltLevel = Float(objLayout.fraction(of: objLocal.x, in: objLayout.objVolumeBar))
+            let fltLevel = objLayout.volumeLevel(at: objLocal)
             objState.enmWidgetScrub = .volume(fltLevel)
             objVolume.setVolume(fltLevel)
         default:
