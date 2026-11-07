@@ -40,6 +40,20 @@ final class NowPlayingService {
     private(set) var objTrack: Track?
     /// Whether it's playing (vs paused).
     private(set) var blnIsPlaying = false
+    /// Track length in seconds (0 when unknown, e.g. live streams).
+    private(set) var dblDuration: Double = 0
+    /// Position in seconds as of `objPositionDate`.
+    @ObservationIgnored private var dblElapsedAtStamp: Double = 0
+    /// When `dblElapsedAtStamp` was measured.
+    @ObservationIgnored private var objPositionDate = Date()
+
+    /// Current position in seconds, extrapolated while playing.
+    /// - Parameter objNow: Moment to evaluate at.
+    /// - Returns: Seconds into the track (clamped to the duration when known).
+    func elapsed(at objNow: Date = Date()) -> Double {
+        let dblElapsed = dblElapsedAtStamp + (blnIsPlaying ? objNow.timeIntervalSince(objPositionDate) : 0)
+        return dblDuration > 0 ? min(max(0, dblElapsed), dblDuration) : max(0, dblElapsed)
+    }
 
     /// Called when the track or play state changes.
     @ObservationIgnored var onChange: (() -> Void)?
@@ -64,14 +78,21 @@ final class NowPlayingService {
     const out = $.NSFileHandle.fileHandleWithStandardOutput;
     function emit(o) { out.writeData($(JSON.stringify(o) + '\\n').dataUsingEncoding($.NSUTF8StringEncoding)); }
     function str(v) { const s = ObjC.unwrap(v); return typeof s === 'string' ? s : ''; }
+    function num(v) { const n = ObjC.unwrap(v); return typeof n === 'number' ? n : 0; }
     let strLast = '', strLastTrack = '';
     while (true) {
-      let o = { title: '', artist: '', bundle: '', playing: false };
+      let o = { title: '', artist: '', bundle: '', playing: false, elapsed: 0, duration: 0, rate: 0, ts: 0 };
       try {
         const objInfo = MR.localNowPlayingItem.nowPlayingInfo;
         if (!objInfo.isNil()) {
           o.title = str(objInfo.valueForKey('kMRMediaRemoteNowPlayingInfoTitle'));
           o.artist = str(objInfo.valueForKey('kMRMediaRemoteNowPlayingInfoArtist'));
+          // Position as of `ts` (seconds since 1970); it advances at `rate` from there.
+          o.elapsed = num(objInfo.valueForKey('kMRMediaRemoteNowPlayingInfoElapsedTime'));
+          o.duration = num(objInfo.valueForKey('kMRMediaRemoteNowPlayingInfoDuration'));
+          o.rate = num(objInfo.valueForKey('kMRMediaRemoteNowPlayingInfoPlaybackRate'));
+          const objStamp = objInfo.valueForKey('kMRMediaRemoteNowPlayingInfoTimestamp');
+          if (!objStamp.isNil()) { o.ts = objStamp.timeIntervalSince1970; }
         }
         o.playing = !!MR.localIsPlaying;
         const objPath = MR.localNowPlayingPlayerPath;
@@ -139,22 +160,12 @@ final class NowPlayingService {
     }
 
     /// Sends a playback command to whatever is playing.
-    ///
-    /// The command is delivered asynchronously, so the helper waits briefly before
-    /// exiting; quitting right away drops it silently (while still reporting success).
     /// - Parameter enmCommand: Command.
     func send(_ enmCommand: Command) {
-        let strScript = Self.strPrelude + """
+        runCommand("""
         ObjC.bindFunction('MRMediaRemoteSendCommand', ['bool', ['int', 'id']]);
         $.MRMediaRemoteSendCommand(\(enmCommand.rawValue), $());
-        delay(0.5);
-        """
-        let objProcess = Process()
-        objProcess.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        objProcess.arguments = ["-l", "JavaScript", "-e", strScript]
-        objProcess.standardOutput = FileHandle.nullDevice
-        objProcess.standardError = FileHandle.nullDevice
-        try? objProcess.run()
+        """)
         // Show the expected play state right away; the watcher confirms within a second.
         switch enmCommand {
         case .play: setPlaying(true)
@@ -162,6 +173,34 @@ final class NowPlayingService {
         case .togglePlayPause: setPlaying(!blnIsPlaying)
         case .nextTrack, .previousTrack: break
         }
+    }
+
+    /// Jumps to a position in the current track.
+    /// - Parameter dblSeconds: Target position.
+    func seek(to dblSeconds: Double) {
+        let dblTarget = dblDuration > 0 ? min(max(0, dblSeconds), dblDuration) : max(0, dblSeconds)
+        runCommand("""
+        ObjC.bindFunction('MRMediaRemoteSetElapsedTime', ['void', ['double']]);
+        $.MRMediaRemoteSetElapsedTime(\(dblTarget));
+        """)
+        // Move the bar right away; the watcher confirms within a second.
+        dblElapsedAtStamp = dblTarget
+        objPositionDate = Date()
+        onChange?()
+    }
+
+    /// Runs a one-shot MediaRemote snippet in an `osascript` helper.
+    ///
+    /// Commands are delivered asynchronously, so the helper waits briefly before
+    /// exiting; quitting right away drops them silently (while still reporting success).
+    /// - Parameter strBody: JavaScript to run after MediaRemote is loaded.
+    private func runCommand(_ strBody: String) {
+        let objProcess = Process()
+        objProcess.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        objProcess.arguments = ["-l", "JavaScript", "-e", Self.strPrelude + strBody + "\ndelay(0.5);"]
+        objProcess.standardOutput = FileHandle.nullDevice
+        objProcess.standardError = FileHandle.nullDevice
+        try? objProcess.run()
     }
 
     // MARK: - Parsing
@@ -199,9 +238,17 @@ final class NowPlayingService {
         let objNew = strTitle.isEmpty ? nil
             : Track(strTitle: strTitle, strArtist: strArtist, objArtwork: objLastArtwork, strBundleId: strBundleId)
         let blnPlaying = dictStatus["playing"] as? Bool ?? false
-        guard objNew != objTrack || blnPlaying != blnIsPlaying else { return }
+
+        // Position: MediaRemote reports where the track was at a timestamp.
+        let dblStamp = dictStatus["ts"] as? Double ?? 0
+        dblElapsedAtStamp = dictStatus["elapsed"] as? Double ?? 0
+        objPositionDate = dblStamp > 0 ? Date(timeIntervalSince1970: dblStamp) : Date()
+        let dblNewDuration = dictStatus["duration"] as? Double ?? 0
+
+        guard objNew != objTrack || blnPlaying != blnIsPlaying || dblNewDuration != dblDuration else { return }
         objTrack = objNew
         blnIsPlaying = blnPlaying
+        dblDuration = dblNewDuration
         onChange?()
     }
 

@@ -59,6 +59,24 @@ enum IndicatorStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// Size of the Now Playing widget.
+enum NowPlayingSize: String, CaseIterable, Identifiable {
+    /// One icon: artwork with a state glyph (click to play/pause).
+    case small
+    /// A wide tile with transport buttons, seek bar and volume (bottom dock only).
+    case large
+
+    var id: String { rawValue }
+
+    /// Label for the settings picker.
+    var strTitle: String {
+        switch self {
+        case .small: "Small"
+        case .large: "Large"
+        }
+    }
+}
+
 /// Color wash over the dock's glass.
 enum DockTint: String, CaseIterable, Identifiable {
     case none
@@ -210,6 +228,7 @@ final class SettingsStore {
         static let strPeek = "Peek"
         static let strShowNowPlaying = "ShowNowPlayingWidget"
         static let strShowBattery = "ShowBatteryWidget"
+        static let strNowPlayingSize = "NowPlayingWidgetSize"
     }
 
     /// Pins used on first launch.
@@ -301,6 +320,12 @@ final class SettingsStore {
     /// Whether a battery widget appears (on Macs with a battery).
     var blnShowBattery: Bool { didSet { objDefaults.set(blnShowBattery, forKey: Key.strShowBattery) } }
 
+    /// Small (icon) or large (controls) Now Playing widget.
+    var enmNowPlayingSize: NowPlayingSize { didSet { objDefaults.set(enmNowPlayingSize.rawValue, forKey: Key.strNowPlayingSize) } }
+
+    /// Whether the large Now Playing tile is actually used (it only fits a bottom dock).
+    var blnUsesLargeNowPlaying: Bool { enmNowPlayingSize == .large && !enmPosition.blnIsVertical }
+
     /// Color wash over the glass.
     var enmTint: DockTint { didSet { objDefaults.set(enmTint.rawValue, forKey: Key.strTint) } }
 
@@ -354,6 +379,7 @@ final class SettingsStore {
             Key.strPeek: true,
             Key.strShowNowPlaying: true,
             Key.strShowBattery: true,
+            Key.strNowPlayingSize: NowPlayingSize.large.rawValue,
         ])
 
         fltIconSize = objDefaults.double(forKey: Key.strIconSize)
@@ -379,6 +405,7 @@ final class SettingsStore {
         blnShowMinimized = objDefaults.bool(forKey: Key.strShowMinimized)
         blnShowNowPlaying = objDefaults.bool(forKey: Key.strShowNowPlaying)
         blnShowBattery = objDefaults.bool(forKey: Key.strShowBattery)
+        enmNowPlayingSize = NowPlayingSize(rawValue: objDefaults.string(forKey: Key.strNowPlayingSize) ?? "") ?? .large
         enmTint = DockTint(rawValue: objDefaults.string(forKey: Key.strTint) ?? "") ?? .none
         strTintHex = objDefaults.string(forKey: Key.strTintHex) ?? "#3B82F6"
         fltTintStrength = objDefaults.double(forKey: Key.strTintStrength)

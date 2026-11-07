@@ -15,6 +15,10 @@ final class DockState {
     var intGroupPending: Int?
     /// Apps launched from the dock that haven't finished launching (they bounce).
     var setStrLaunching: Set<String> = []
+    /// Control under the cursor on the large Now Playing tile.
+    var enmWidgetHover: NowPlayingLargeLayout.Control?
+    /// Seek/volume bar being dragged on the large Now Playing tile.
+    var enmWidgetScrub: WidgetScrub?
 }
 
 /// One dock icon with its notification badge, progress bar and bounces.
@@ -121,6 +125,7 @@ struct DockView: View {
     let objBadges: DockBadgeService
     let objNowPlaying: NowPlayingService
     let objBattery: BatteryService
+    let objVolume: SystemVolumeService
 
     /// Live view for a widget tile.
     /// - Parameters:
@@ -172,6 +177,16 @@ struct DockView: View {
                     divider(objGeometry: objGeometry, fltMain: fltCenter)
                         .opacity(blnIsDragged ? 0 : 1)
                         .transition(.opacity)
+                } else if objGeometry.arrBlnWide[safe: intIndex] == true {
+                    NowPlayingLargeView(
+                        objNowPlaying: objNowPlaying,
+                        objVolume: objVolume,
+                        fltIconSize: objGeometry.fltIconSize,
+                        enmScrub: objState.enmWidgetScrub,
+                        enmHovered: objState.enmWidgetHover
+                    )
+                    .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.iconCross(forSize: objGeometry.fltIconSize)))
+                    .transition(.scale(scale: 0.3).combined(with: .opacity))
                 } else if let enmWidget = objItem.enmWidget {
                     widgetTile(enmWidget, fltSize: fltSize)
                         .position(objIconPoint)
@@ -213,6 +228,7 @@ struct DockView: View {
         .animation(.spring(response: 0.28, dampingFraction: 0.82), value: arrObjItems.map(\.id))
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.fltIconSize)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.blnCompact)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.enmNowPlayingSize)
     }
 
     /// Running indicator in the chosen style. Turns accent-colored (and larger)

@@ -98,11 +98,18 @@ private struct AppearanceTab: View {
 
             Section {
                 Toggle("Now Playing", isOn: $objSettings.blnShowNowPlaying)
+                Picker("Now Playing size", selection: $objSettings.enmNowPlayingSize) {
+                    ForEach(NowPlayingSize.allCases) { enmSize in
+                        Text(enmSize.strTitle).tag(enmSize)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(!objSettings.blnShowNowPlaying)
                 Toggle("Battery", isOn: $objSettings.blnShowBattery)
             } header: {
                 Text("Widgets")
             } footer: {
-                Text("Now Playing appears while music or a video is playing or paused: click to play or pause, right-click to skip. Battery shows the charge; click it for Battery settings.")
+                Text("Now Playing appears while music or a video is playing or paused. Small is a single tile: click to play or pause, right-click to skip. Large adds previous/next, a seek bar, mute and volume (on a dock at the bottom; side docks use Small). Battery shows the charge; click it for Battery settings.")
                     .foregroundStyle(.secondary)
             }
         }

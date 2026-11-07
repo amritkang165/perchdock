@@ -5,6 +5,8 @@ import SwiftUI
 struct NowPlayingTileView: View {
     let objNowPlaying: NowPlayingService
     let fltSize: CGFloat
+    /// Show the playing/paused glyph (the large tile has its own play button).
+    var blnShowsState = true
 
     var body: some View {
         let fltCorner = fltSize * 0.22
@@ -16,16 +18,18 @@ struct NowPlayingTileView: View {
                 .saturation(objNowPlaying.blnIsPlaying ? 1 : 0.55)
 
             // State glyph in the bottom-left corner.
-            VStack {
-                Spacer()
-                HStack {
-                    stateGlyph
-                        .frame(width: fltSize * 0.34, height: fltSize * 0.34)
-                        .background(Circle().fill(.black.opacity(0.55)))
+            if blnShowsState {
+                VStack {
                     Spacer()
+                    HStack {
+                        stateGlyph
+                            .frame(width: fltSize * 0.34, height: fltSize * 0.34)
+                            .background(Circle().fill(.black.opacity(0.55)))
+                        Spacer()
+                    }
                 }
+                .padding(fltSize * 0.07)
             }
-            .padding(fltSize * 0.07)
         }
         .frame(width: fltSize, height: fltSize)
         .overlay(

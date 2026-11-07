@@ -27,6 +27,7 @@ final class DockController {
     private let objWindowService: WindowService
     private let objNewWindowTracker: NewWindowTracker
     private let objNowPlaying: NowPlayingService
+    private let objVolume: SystemVolumeService
     private let objSettings: SettingsStore
     private let objState = DockState()
     private let objPanel: DockPanel
@@ -77,6 +78,8 @@ final class DockController {
     // Press/drag tracking.
     private var objPressPoint: CGPoint?
     private var intPressIndex: Int?
+    /// Control pressed on the large Now Playing tile (the press won't become a click or drag).
+    private var enmPressedControl: NowPlayingLargeLayout.Control?
 
     /// Wires the panel, picker, app tracker and settings together.
     /// - Parameters:
@@ -94,12 +97,14 @@ final class DockController {
         objBadges: DockBadgeService,
         objNowPlaying: NowPlayingService,
         objBattery: BatteryService,
+        objVolume: SystemVolumeService,
         objSettings: SettingsStore
     ) {
         self.objTracker = objTracker
         self.objWindowService = objWindowService
         self.objNewWindowTracker = objNewWindowTracker
         self.objNowPlaying = objNowPlaying
+        self.objVolume = objVolume
         self.objSettings = objSettings
         objPicker = WindowPickerController(objThumbnailService: objThumbnailService)
 
@@ -111,7 +116,8 @@ final class DockController {
             objNewWindowTracker: objNewWindowTracker,
             objBadges: objBadges,
             objNowPlaying: objNowPlaying,
-            objBattery: objBattery
+            objBattery: objBattery,
+            objVolume: objVolume
         ))
         objPanel.contentView = objHostingView
         objHostingView.enableFileDrops()
@@ -256,6 +262,9 @@ final class DockController {
             objPressPoint = nil
             intPressIndex = nil
         }
+        enmPressedControl = nil
+        objState.enmWidgetScrub = nil
+        objState.enmWidgetHover = nil
         objState.intHoveredIndex = nil
         objState.fltMouseMain = nil
         updateAutoHide()
@@ -274,6 +283,7 @@ final class DockController {
             _ = objSettings.blnShowMinimized
             _ = objSettings.blnShowNowPlaying
             _ = objSettings.blnShowBattery
+            _ = objSettings.enmNowPlayingSize
         } onChange: { [weak self] in
             // onChange fires before the new value is stored; apply on the next turn.
             Task { @MainActor [weak self] in
@@ -398,6 +408,7 @@ final class DockController {
         }
         updateHoveredIndex(intSlot)
         updateHoverLabel()
+        updateWidgetHover(blnOverDock ? panelPoint(fromScreen: objScreenPoint) : nil)
 
         // Hidden dock: watch for the cursor reaching the screen edge.
         if objSettings.blnAutoHide && !blnShown {
@@ -414,7 +425,8 @@ final class DockController {
     private func updateHoverLabel() {
         guard objSettings.blnShowLabels, blnShown, !objPicker.blnIsVisible, !objGrid.blnIsVisible, objState.objDrag == nil,
               let intIndex = objState.intHoveredIndex,
-              let objItem = objTracker.arrObjItems[safe: intIndex], !objItem.blnIsDivider else {
+              let objItem = objTracker.arrObjItems[safe: intIndex], !objItem.blnIsDivider,
+              objGeometry.arrBlnWide[safe: intIndex] != true else {
             objHoverLabel.hide()
             return
         }
@@ -591,11 +603,28 @@ final class DockController {
         objPressPoint = objPoint
         intPressIndex = objGeometry.slotIndex(atMain: fltMain)
         objShowPickerTask?.cancel()
+
+        // Large Now Playing tile: the press belongs to one of its controls.
+        enmPressedControl = largeTileControl(atPanelPoint: objPoint)
+        switch enmPressedControl {
+        case .seek(let dblFraction):
+            objState.enmWidgetScrub = .seek(dblFraction)
+        case .volume(let fltLevel):
+            objState.enmWidgetScrub = .volume(fltLevel)
+            objVolume.setVolume(fltLevel)
+        default:
+            break
+        }
     }
 
     /// Starts or updates a drag-reorder once the press has moved far enough.
     /// - Parameter objPoint: Panel-local point (may be outside the panel).
     private func handleMouseDragged(_ objPoint: CGPoint) {
+        // Dragging on the large Now Playing tile scrubs its bars instead.
+        if let enmPressedControl {
+            scrubWidget(enmPressedControl, atPanelPoint: objPoint)
+            return
+        }
         guard let objPressPoint, let intPressIndex,
               let objDragged = objTracker.arrObjItems[safe: intPressIndex], objDragged.blnIsMovable else { return }
         let objGeometry = self.objGeometry
@@ -783,9 +812,14 @@ final class DockController {
         defer {
             objPressPoint = nil
             intPressIndex = nil
+            enmPressedControl = nil
             handleMouse(at: NSEvent.mouseLocation)
         }
 
+        if let enmPressedControl {
+            performWidgetControl(enmPressedControl)
+            return
+        }
         if let objDrag = objState.objDrag {
             finishDrag(objDrag)
             return
@@ -880,10 +914,110 @@ final class DockController {
             objWindowService.raise(objWindow, of: objApp)
         case .widget(.nowPlaying):
             objGrid.hide()
+            // The large tile has its own buttons; only the small one toggles on click.
+            guard objGeometry.arrBlnWide[safe: intIndex] != true else { return }
             objNowPlaying.send(.togglePlayPause)
         case .widget(.battery):
             objGrid.hide()
             Self.openBatterySettings()
+        }
+    }
+
+    // MARK: - Large Now Playing tile
+
+    /// Where the large Now Playing tile sits right now, if it's in the dock.
+    /// - Returns: Tile layout, its leading main coordinate and its far-from-edge cross coordinate.
+    private func largeTileFrame() -> (objLayout: NowPlayingLargeLayout, fltStartMain: CGFloat, fltTopCross: CGFloat)? {
+        let objGeometry = self.objGeometry
+        guard let intIndex = objGeometry.arrBlnWide.firstIndex(of: true) else { return nil }
+        let objLayout = NowPlayingLargeLayout(fltIconSize: objGeometry.fltIconSize)
+        let fltCenter = objGeometry.layout(mouseMain: objState.fltMouseMain).arrFltCenters[safe: intIndex]
+            ?? objGeometry.baseCenter(intIndex)
+        let fltTopCross = objGeometry.iconCross(forSize: objGeometry.fltIconSize) + objGeometry.fltIconSize / 2
+        return (objLayout, fltCenter - objLayout.fltWidth / 2, fltTopCross)
+    }
+
+    /// Converts a panel point into the large tile's local coordinates (top-left origin).
+    /// - Parameter objPoint: Panel-local point.
+    /// - Returns: Tile layout and local point, or `nil` without a large tile.
+    private func largeTileLocal(_ objPoint: CGPoint) -> (objLayout: NowPlayingLargeLayout, objLocal: CGPoint)? {
+        guard let objFrame = largeTileFrame() else { return nil }
+        let (fltMain, fltCross) = objGeometry.mainCross(fromPanelPoint: objPoint)
+        return (objFrame.objLayout, CGPoint(x: fltMain - objFrame.fltStartMain, y: objFrame.fltTopCross - fltCross))
+    }
+
+    /// Control of the large Now Playing tile under a panel point.
+    /// - Parameter objPoint: Panel-local point.
+    /// - Returns: The control, or `nil` when not over one.
+    private func largeTileControl(atPanelPoint objPoint: CGPoint) -> NowPlayingLargeLayout.Control? {
+        guard let (objLayout, objLocal) = largeTileLocal(objPoint),
+              objLocal.x >= 0, objLocal.x <= objLayout.fltWidth, objLocal.y >= 0, objLocal.y <= objLayout.fltHeight else { return nil }
+        let enmControl = objLayout.control(at: objLocal)
+        // Nothing to seek in a live stream (the bar isn't drawn).
+        if case .seek = enmControl, objNowPlaying.dblDuration <= 0 { return nil }
+        if case .volume = enmControl, !objVolume.blnHasVolume { return nil }
+        if enmControl == .mute, !objVolume.blnHasVolume { return nil }
+        return enmControl
+    }
+
+    /// Updates the hover highlight on the large tile (bars count as one target).
+    /// - Parameter objPoint: Panel-local cursor point, or `nil` when off the dock.
+    private func updateWidgetHover(_ objPoint: CGPoint?) {
+        var enmHover = objPoint.flatMap { largeTileControl(atPanelPoint: $0) }
+        // Bar positions change with every pixel; the highlight only cares which bar.
+        switch enmHover {
+        case .seek: enmHover = .seek(0)
+        case .volume: enmHover = .volume(0)
+        default: break
+        }
+        if objState.enmWidgetHover != enmHover {
+            objState.enmWidgetHover = enmHover
+        }
+    }
+
+    /// Follows a drag along the seek or volume bar (volume applies live; seek on release).
+    /// - Parameters:
+    ///   - enmControl: Control the press started on.
+    ///   - objPoint: Panel-local cursor point.
+    private func scrubWidget(_ enmControl: NowPlayingLargeLayout.Control, atPanelPoint objPoint: CGPoint) {
+        guard let (objLayout, objLocal) = largeTileLocal(objPoint) else { return }
+        switch enmControl {
+        case .seek:
+            objState.enmWidgetScrub = .seek(objLayout.fraction(of: objLocal.x, in: objLayout.objSeekBar))
+        case .volume:
+            let fltLevel = Float(objLayout.fraction(of: objLocal.x, in: objLayout.objVolumeBar))
+            objState.enmWidgetScrub = .volume(fltLevel)
+            objVolume.setVolume(fltLevel)
+        default:
+            break
+        }
+    }
+
+    /// Runs a large-tile control on release.
+    /// - Parameter enmControl: Control the press started on.
+    private func performWidgetControl(_ enmControl: NowPlayingLargeLayout.Control) {
+        let enmScrub = objState.enmWidgetScrub
+        objState.enmWidgetScrub = nil
+        switch enmControl {
+        case .artwork:
+            // Bring the player forward (e.g. Spotify, Music, the browser tab's app).
+            if let strBundleId = objNowPlaying.objTrack?.strBundleId,
+               let objApp = NSRunningApplication.runningApplications(withBundleIdentifier: strBundleId).first {
+                objApp.activate()
+            }
+        case .previous:
+            objNowPlaying.send(.previousTrack)
+        case .playPause:
+            objNowPlaying.send(.togglePlayPause)
+        case .next:
+            objNowPlaying.send(.nextTrack)
+        case .mute:
+            objVolume.setMuted(!objVolume.blnIsMuted)
+        case .seek(let dblPressFraction):
+            let dblFraction: Double = if case .seek(let dblScrub) = enmScrub { dblScrub } else { dblPressFraction }
+            objNowPlaying.seek(to: dblFraction * objNowPlaying.dblDuration)
+        case .volume:
+            break
         }
     }
 

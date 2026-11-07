@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let objDockBadges = DockBadgeService()
     private let objNowPlaying = NowPlayingService()
     private let objBattery = BatteryService()
+    private let objVolume = SystemVolumeService()
     private let objNativeDock = NativeDockController()
     private let objUpdates = UpdateController()
     private lazy var objSettingsWindow = SettingsWindowController(objSettings: objSettings, objThumbnailService: objThumbnailService)
@@ -55,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             objBadges: objDockBadges,
             objNowPlaying: objNowPlaying,
             objBattery: objBattery,
+            objVolume: objVolume,
             objSettings: objSettings
         )
         objController.onOpenSettings = { [weak self] in
@@ -94,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         objBattery.onChange = { [weak self] in self?.objAppTracker.rebuild() }
         objNowPlaying.start()
         objBattery.start()
+        objVolume.start()
     }
 
     /// Restores the native Dock on a normal quit so the user is never left without one.

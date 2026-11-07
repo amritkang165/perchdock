@@ -21,6 +21,8 @@ struct DockGeometry {
     let intCount: Int
     /// Which items are dividers (thin, not magnified).
     let arrBlnDivider: [Bool]
+    /// Which items are wide tiles (the large Now Playing widget: fixed width, not magnified).
+    let arrBlnWide: [Bool]
 
     static let fltIndicatorSize: CGFloat = 5
     static let fltScreenGap: CGFloat = 4
@@ -47,6 +49,8 @@ struct DockGeometry {
         blnCompact = objSettings.blnCompact
         intCount = arrObjItems.count
         arrBlnDivider = arrObjItems.map(\.blnIsDivider)
+        let blnLarge = objSettings.blnUsesLargeNowPlaying
+        arrBlnWide = arrObjItems.map { blnLarge && $0.enmWidget == .nowPlaying }
     }
 
     // MARK: - Dimensions
@@ -65,7 +69,20 @@ struct DockGeometry {
     /// - Parameter intIndex: Item index.
     /// - Returns: Width along the main axis.
     func baseWidth(_ intIndex: Int) -> CGFloat {
-        arrBlnDivider.indices.contains(intIndex) && arrBlnDivider[intIndex] ? fltDividerWidth : fltIconSize
+        guard arrBlnDivider.indices.contains(intIndex) else { return fltIconSize }
+        if arrBlnDivider[intIndex] { return fltDividerWidth }
+        if arrBlnWide[intIndex] { return fltWideWidth }
+        return fltIconSize
+    }
+
+    /// Width of a wide tile (the large Now Playing widget).
+    var fltWideWidth: CGFloat { NowPlayingLargeLayout(fltIconSize: fltIconSize).fltWidth }
+
+    /// Whether an item keeps its size under the cursor (dividers and wide tiles).
+    /// - Parameter intIndex: Item index.
+    /// - Returns: `true` if it never magnifies.
+    func isFixedSize(_ intIndex: Int) -> Bool {
+        arrBlnDivider.indices.contains(intIndex) && (arrBlnDivider[intIndex] || arrBlnWide[intIndex])
     }
 
     /// Bar thickness: padding, running indicator, icon, padding.
@@ -183,7 +200,7 @@ struct DockGeometry {
         var arrFltSizes = arrFltBaseWidths
 
         if let fltMouseMain, fltMagnification > 1.001 {
-            for intIndex in 0..<intCount where !arrBlnDivider[intIndex] {
+            for intIndex in 0..<intCount where !isFixedSize(intIndex) {
                 let fltDistance = abs(fltMouseMain - arrFltBaseCenters[intIndex]) / fltSlot
                 guard fltDistance < Self.fltInfluenceRadius else { continue }
                 let fltFalloff = (cos(.pi * fltDistance / Self.fltInfluenceRadius) + 1) / 2
