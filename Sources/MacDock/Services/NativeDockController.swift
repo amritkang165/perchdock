@@ -6,6 +6,10 @@ import Foundation
 /// Mission Control, Spaces and Cmd-Tab), so we use the same trick as other dock
 /// apps: auto-hide with a huge reveal delay. The user's original values are
 /// snapshotted first so `restore()` puts back exactly what they had.
+///
+/// A hidden Dock still bounces icons (on launch and for attention), and the bounce
+/// pokes up above the screen edge, so bouncing is turned off while it's hidden too.
+/// MacDock does its own launch and attention bounces.
 @MainActor
 final class NativeDockController {
     /// The user's native Dock values captured before we changed them.
@@ -14,6 +18,10 @@ final class NativeDockController {
         let blnAutohide: Bool?
         let fltAutohideDelay: Double?
         let fltAutohideTimeModifier: Double?
+        let blnLaunchAnim: Bool?
+        let blnNoBouncing: Bool?
+        /// Whether the bounce keys were captured (snapshots from older versions lack them).
+        var blnHasBounceKeys: Bool? = true
     }
 
     private static let strDockDomain = "com.apple.dock"
@@ -28,19 +36,33 @@ final class NativeDockController {
     /// Hides the native Dock, snapshotting the user's values on first use.
     func hide() {
         // Only snapshot once, so a re-hide never overwrites the true originals.
-        if !blnIsHiddenByUs {
-            saveSnapshot(readCurrentValues())
+        let objCurrent = readCurrentValues()
+        if let objSnapshot = loadSnapshot() {
+            // Snapshot from an older version: add the bounce keys while they're still the user's.
+            if objSnapshot.blnHasBounceKeys != true {
+                saveSnapshot(Snapshot(blnAutohide: objSnapshot.blnAutohide,
+                                      fltAutohideDelay: objSnapshot.fltAutohideDelay,
+                                      fltAutohideTimeModifier: objSnapshot.fltAutohideTimeModifier,
+                                      blnLaunchAnim: objCurrent.blnLaunchAnim,
+                                      blnNoBouncing: objCurrent.blnNoBouncing))
+            }
+        } else {
+            saveSnapshot(objCurrent)
         }
 
         // Skip the Dock restart if it's already in the hidden state.
-        let objCurrent = readCurrentValues()
         let blnAlreadyHidden = objCurrent.blnAutohide == true
             && objCurrent.fltAutohideDelay == Self.fltHiddenDelay
+            && objCurrent.blnLaunchAnim == false
+            && objCurrent.blnNoBouncing == true
         guard !blnAlreadyHidden else { return }
 
         writeDefault("autohide", arrStrValue: ["-bool", "true"])
         writeDefault("autohide-delay", arrStrValue: ["-float", String(Self.fltHiddenDelay)])
         writeDefault("autohide-time-modifier", arrStrValue: ["-float", "0"])
+        // No bouncing icons poking up from the hidden Dock.
+        writeDefault("launchanim", arrStrValue: ["-bool", "false"])
+        writeDefault("no-bouncing", arrStrValue: ["-bool", "true"])
         restartDock()
     }
 
@@ -51,6 +73,8 @@ final class NativeDockController {
         applyOriginal("autohide", objValue: objSnapshot.blnAutohide.map { ["-bool", $0 ? "true" : "false"] })
         applyOriginal("autohide-delay", objValue: objSnapshot.fltAutohideDelay.map { ["-float", String($0)] })
         applyOriginal("autohide-time-modifier", objValue: objSnapshot.fltAutohideTimeModifier.map { ["-float", String($0)] })
+        applyOriginal("launchanim", objValue: objSnapshot.blnLaunchAnim.map { ["-bool", $0 ? "true" : "false"] })
+        applyOriginal("no-bouncing", objValue: objSnapshot.blnNoBouncing.map { ["-bool", $0 ? "true" : "false"] })
 
         UserDefaults.standard.removeObject(forKey: Self.strSnapshotKey)
         restartDock()
@@ -72,7 +96,9 @@ final class NativeDockController {
         return Snapshot(
             blnAutohide: number("autohide")?.boolValue,
             fltAutohideDelay: number("autohide-delay")?.doubleValue,
-            fltAutohideTimeModifier: number("autohide-time-modifier")?.doubleValue
+            fltAutohideTimeModifier: number("autohide-time-modifier")?.doubleValue,
+            blnLaunchAnim: number("launchanim")?.boolValue,
+            blnNoBouncing: number("no-bouncing")?.boolValue
         )
     }
 
