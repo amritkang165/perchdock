@@ -1,5 +1,6 @@
 import ApplicationServices
 import Darwin
+import Foundation
 
 /// Optional wrappers around undocumented window-server functions.
 ///
@@ -12,6 +13,11 @@ enum PrivateWindowAPI {
     private typealias GetProcessForPidFn = @convention(c) (pid_t, UnsafeMutablePointer<ProcessSerialNumber>) -> OSStatus
     private typealias SetFrontProcessFn = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, CGWindowID, UInt32) -> CGError
     private typealias PostEventRecordFn = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, UnsafeMutablePointer<UInt8>) -> CGError
+    private typealias MainConnectionFn = @convention(c) () -> Int32
+    private typealias CopySpacesForWindowsFn = @convention(c) (Int32, Int32, CFArray) -> Unmanaged<CFArray>?
+
+    /// Mask for `SLSCopySpacesForWindows`: current, other and all Spaces.
+    private static let intAllSpacesMask: Int32 = 7
 
     /// `kCPSUserGenerated`: treat the activation as if the user clicked the window.
     private static let intUserGeneratedMode: UInt32 = 0x200
@@ -23,6 +29,21 @@ enum PrivateWindowAPI {
     private static let fnGetProcessForPid: GetProcessForPidFn? = symbol("GetProcessForPID", objHandle: objDefaultHandle)
     private static let fnSetFrontProcess: SetFrontProcessFn? = symbol("_SLPSSetFrontProcessWithOptions", objHandle: objSkyLight)
     private static let fnPostEventRecord: PostEventRecordFn? = symbol("SLPSPostEventRecordTo", objHandle: objSkyLight)
+    private static let fnMainConnection: MainConnectionFn? = symbol("SLSMainConnectionID", objHandle: objSkyLight)
+    private static let fnCopySpacesForWindows: CopySpacesForWindowsFn? = symbol("SLSCopySpacesForWindows", objHandle: objSkyLight)
+
+    /// Whether a window belongs to any Space. Real windows on other desktops do;
+    /// hidden helper windows and closed-but-cached windows don't.
+    /// - Parameter intWindowId: Window to check.
+    /// - Returns: `true` if it lives on a Space, `nil` if the API is unavailable.
+    static func isOnAnySpace(_ intWindowId: CGWindowID) -> Bool? {
+        guard let fnMainConnection, let fnCopySpacesForWindows else { return nil }
+        let arrObjIds = [NSNumber(value: intWindowId)] as CFArray
+        guard let objResult = fnCopySpacesForWindows(fnMainConnection(), intAllSpacesMask, arrObjIds)?.takeRetainedValue() else {
+            return false
+        }
+        return CFArrayGetCount(objResult) > 0
+    }
 
     /// Maps an AX window element to its window-server ID.
     /// - Parameter objElement: An AX window.

@@ -43,12 +43,33 @@ final class WindowPickerController {
     ///   - intAnchorIndex: Dock item index the picker belongs to.
     ///   - objAnchorPoint: Screen point at the top-center of the icon.
     func show(strAppName: String, arrObjWindows: [WindowInfo], intAnchorIndex: Int, objAnchorPoint: CGPoint) {
-        objState.strAppName = strAppName
+        objState.blnNeedsPermission = false
         objState.arrObjWindows = arrObjWindows
+        present(strAppName: strAppName, intAnchorIndex: intAnchorIndex, objAnchorPoint: objAnchorPoint)
+    }
+
+    /// Shows a single row asking for Accessibility access instead of a window list.
+    /// - Parameters:
+    ///   - strAppName: Header text.
+    ///   - intAnchorIndex: Dock item index the picker belongs to.
+    ///   - objAnchorPoint: Screen point at the top-center of the icon.
+    func showPermissionNotice(strAppName: String, intAnchorIndex: Int, objAnchorPoint: CGPoint) {
+        objState.blnNeedsPermission = true
+        objState.arrObjWindows = []
+        present(strAppName: strAppName, intAnchorIndex: intAnchorIndex, objAnchorPoint: objAnchorPoint)
+    }
+
+    /// Positions the panel for the current state and animates it in (or over).
+    /// - Parameters:
+    ///   - strAppName: Header text.
+    ///   - intAnchorIndex: Dock item index the picker belongs to.
+    ///   - objAnchorPoint: Screen point at the top-center of the icon.
+    private func present(strAppName: String, intAnchorIndex: Int, objAnchorPoint: CGPoint) {
+        objState.strAppName = strAppName
         objState.intHoveredRow = nil
         self.intAnchorIndex = intAnchorIndex
 
-        let fltHeight = WindowPickerLayout.height(forRowCount: arrObjWindows.count)
+        let fltHeight = WindowPickerLayout.height(forRowCount: objState.intRowCount)
         var fltOriginX = objAnchorPoint.x - WindowPickerLayout.fltWidth / 2
 
         // Keep the picker fully on screen near the screen edges.
@@ -106,7 +127,7 @@ final class WindowPickerController {
     /// - Parameter objPoint: Local mouse point, or `nil` on exit.
     private func handleMouseMoved(_ objPoint: CGPoint?) {
         objState.intHoveredRow = objPoint.flatMap {
-            WindowPickerLayout.rowIndex(at: $0, rowCount: objState.arrObjWindows.count)
+            WindowPickerLayout.rowIndex(at: $0, rowCount: objState.intRowCount)
         }
 
         let blnInside = objPoint != nil
@@ -119,7 +140,13 @@ final class WindowPickerController {
     /// Selects the clicked row's window.
     /// - Parameter objPoint: Local click point.
     private func handleClick(_ objPoint: CGPoint) {
-        guard let intRow = WindowPickerLayout.rowIndex(at: objPoint, rowCount: objState.arrObjWindows.count) else { return }
+        guard let intRow = WindowPickerLayout.rowIndex(at: objPoint, rowCount: objState.intRowCount) else { return }
+
+        if objState.blnNeedsPermission {
+            hide()
+            AccessibilityPermission.openSystemSettings()
+            return
+        }
         onSelectWindow?(objState.arrObjWindows[intRow])
     }
 }

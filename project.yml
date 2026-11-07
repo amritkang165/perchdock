@@ -35,6 +35,12 @@ targets:
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
         ENABLE_HARDENED_RUNTIME: YES
-        CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_IDENTITY: "-"
+        # Stable local identity (scripts/setup-signing.sh) so macOS keeps the
+        # Accessibility grant across rebuilds. Switch to Developer ID to share.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "MacDock Local Signing"
+        OTHER_CODE_SIGN_FLAGS: "--keychain $(HOME)/Library/Keychains/macdock-signing.keychain-db"
+        # A self-signed identity has no Team ID, so hardened-runtime library
+        # validation rejects Xcode's separate debug dylib; link it statically.
+        ENABLE_DEBUG_DYLIB: NO
         GENERATE_INFOPLIST_FILE: NO

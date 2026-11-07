@@ -5,6 +5,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Ensure the local signing identity exists and its keychain is unlocked.
+scripts/setup-signing.sh >/dev/null
+security unlock-keychain -p macdock-local "$HOME/Library/Keychains/macdock-signing.keychain-db"
+
 xcodegen generate --quiet
 
 xcodebuild \

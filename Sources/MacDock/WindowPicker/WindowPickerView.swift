@@ -36,6 +36,13 @@ final class WindowPickerState {
     var strAppName = ""
     var arrObjWindows: [WindowInfo] = []
     var intHoveredRow: Int?
+    /// When true, a single "grant Accessibility" row replaces the window list.
+    var blnNeedsPermission = false
+
+    /// Number of clickable rows currently shown.
+    var intRowCount: Int {
+        blnNeedsPermission ? 1 : arrObjWindows.count
+    }
 }
 
 /// Glass popover listing an app's windows; clicking a row raises that window.
@@ -50,8 +57,22 @@ struct WindowPickerView: View {
                 .padding(.horizontal, 8)
                 .frame(height: WindowPickerLayout.fltHeaderHeight, alignment: .leading)
 
-            ForEach(Array(objState.arrObjWindows.enumerated()), id: \.element.id) { intIndex, objWindow in
-                WindowRowView(objWindow: objWindow, blnIsHovered: objState.intHoveredRow == intIndex)
+            if objState.blnNeedsPermission {
+                PickerRowView(
+                    strSymbol: "lock.shield",
+                    strTitle: "Allow Accessibility to see windows…",
+                    blnIsDimmed: false,
+                    blnIsHovered: objState.intHoveredRow == 0
+                )
+            } else {
+                ForEach(Array(objState.arrObjWindows.enumerated()), id: \.element.id) { intIndex, objWindow in
+                    PickerRowView(
+                        strSymbol: symbol(for: objWindow),
+                        strTitle: objWindow.strTitle,
+                        blnIsDimmed: objWindow.blnIsMinimized || objWindow.blnIsOnOtherSpace,
+                        blnIsHovered: objState.intHoveredRow == intIndex
+                    )
+                }
             }
         }
         .padding(WindowPickerLayout.fltPadding)
@@ -59,18 +80,29 @@ struct WindowPickerView: View {
         .dockGlass(cornerRadius: WindowPickerLayout.fltCornerRadius)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
+
+    /// SF Symbol describing where a window is.
+    /// - Parameter objWindow: Window being listed.
+    /// - Returns: Symbol name.
+    private func symbol(for objWindow: WindowInfo) -> String {
+        if objWindow.blnIsMinimized { return "minus.rectangle" }
+        if objWindow.blnIsOnOtherSpace { return "rectangle.on.rectangle" }
+        return "macwindow"
+    }
 }
 
-/// A single window entry: icon, title, and a highlight while hovered.
-private struct WindowRowView: View {
-    let objWindow: WindowInfo
+/// A single picker row: icon, title, and a highlight while hovered.
+private struct PickerRowView: View {
+    let strSymbol: String
+    let strTitle: String
+    let blnIsDimmed: Bool
     let blnIsHovered: Bool
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: objWindow.blnIsMinimized ? "minus.rectangle" : "macwindow")
+            Image(systemName: strSymbol)
                 .frame(width: 16)
-            Text(objWindow.strTitle)
+            Text(strTitle)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
@@ -86,9 +118,9 @@ private struct WindowRowView: View {
         .animation(.easeOut(duration: 0.08), value: blnIsHovered)
     }
 
-    /// White on the highlight, dimmed for minimized windows, primary otherwise.
+    /// White on the highlight, dimmed for minimized/other-desktop windows, primary otherwise.
     private var textColor: Color {
         if blnIsHovered { return .white }
-        return objWindow.blnIsMinimized ? .secondary : .primary
+        return blnIsDimmed ? .secondary : .primary
     }
 }

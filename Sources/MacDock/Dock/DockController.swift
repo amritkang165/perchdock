@@ -193,6 +193,17 @@ final class DockController {
             return
         }
 
+        // Without Accessibility we can't list windows; say so instead of showing nothing.
+        guard AccessibilityPermission.blnIsTrusted else {
+            objPicker.showPermissionNotice(
+                strAppName: objItem.strName,
+                intAnchorIndex: intIndex,
+                objAnchorPoint: anchorPoint(forIndex: intIndex)
+            )
+            installOutsideClickMonitor()
+            return
+        }
+
         let arrObjResolved = arrObjWindows ?? objWindowService.windows(for: objApp)
         guard !arrObjResolved.isEmpty else {
             hidePicker()
