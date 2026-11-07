@@ -119,6 +119,21 @@ struct DockView: View {
     let objState: DockState
     let objNewWindowTracker: NewWindowTracker
     let objBadges: DockBadgeService
+    let objNowPlaying: NowPlayingService
+    let objBattery: BatteryService
+
+    /// Live view for a widget tile.
+    /// - Parameters:
+    ///   - enmWidget: Widget.
+    ///   - fltSize: Current (magnified) tile size.
+    /// - Returns: The tile.
+    @ViewBuilder
+    private func widgetTile(_ enmWidget: DockItem.Widget, fltSize: CGFloat) -> some View {
+        switch enmWidget {
+        case .nowPlaying: NowPlayingTileView(objNowPlaying: objNowPlaying, fltSize: fltSize)
+        case .battery: BatteryTileView(objBattery: objBattery, fltSize: fltSize)
+        }
+    }
 
     /// Direction icons hop: away from the screen edge.
     private var bounceDirection: CGVector {
@@ -157,6 +172,10 @@ struct DockView: View {
                     divider(objGeometry: objGeometry, fltMain: fltCenter)
                         .opacity(blnIsDragged ? 0 : 1)
                         .transition(.opacity)
+                } else if let enmWidget = objItem.enmWidget {
+                    widgetTile(enmWidget, fltSize: fltSize)
+                        .position(objIconPoint)
+                        .transition(.scale(scale: 0.3).combined(with: .opacity))
                 } else {
                     DockIconView(
                         objIcon: objItem.objIcon,

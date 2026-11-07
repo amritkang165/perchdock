@@ -95,6 +95,16 @@ private struct AppearanceTab: View {
                 Text("Right-click the dock to add dividers or folders. Hold an app over another app to make a group, or drop it on a group to add it.")
                     .foregroundStyle(.secondary)
             }
+
+            Section {
+                Toggle("Now Playing", isOn: $objSettings.blnShowNowPlaying)
+                Toggle("Battery", isOn: $objSettings.blnShowBattery)
+            } header: {
+                Text("Widgets")
+            } footer: {
+                Text("Now Playing appears while music or a video is playing or paused: click to play or pause, right-click to skip. Battery shows the charge; click it for Battery settings.")
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

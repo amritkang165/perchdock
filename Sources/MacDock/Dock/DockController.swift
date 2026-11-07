@@ -26,6 +26,7 @@ final class DockController {
     private let objTracker: AppTracker
     private let objWindowService: WindowService
     private let objNewWindowTracker: NewWindowTracker
+    private let objNowPlaying: NowPlayingService
     private let objSettings: SettingsStore
     private let objState = DockState()
     private let objPanel: DockPanel
@@ -91,11 +92,14 @@ final class DockController {
         objThumbnailService: ThumbnailService,
         objNewWindowTracker: NewWindowTracker,
         objBadges: DockBadgeService,
+        objNowPlaying: NowPlayingService,
+        objBattery: BatteryService,
         objSettings: SettingsStore
     ) {
         self.objTracker = objTracker
         self.objWindowService = objWindowService
         self.objNewWindowTracker = objNewWindowTracker
+        self.objNowPlaying = objNowPlaying
         self.objSettings = objSettings
         objPicker = WindowPickerController(objThumbnailService: objThumbnailService)
 
@@ -105,7 +109,9 @@ final class DockController {
             objSettings: objSettings,
             objState: objState,
             objNewWindowTracker: objNewWindowTracker,
-            objBadges: objBadges
+            objBadges: objBadges,
+            objNowPlaying: objNowPlaying,
+            objBattery: objBattery
         ))
         objPanel.contentView = objHostingView
         objHostingView.enableFileDrops()
@@ -266,6 +272,8 @@ final class DockController {
             _ = objSettings.blnCompact
             _ = objSettings.blnShowTrash
             _ = objSettings.blnShowMinimized
+            _ = objSettings.blnShowNowPlaying
+            _ = objSettings.blnShowBattery
         } onChange: { [weak self] in
             // onChange fires before the new value is stored; apply on the next turn.
             Task { @MainActor [weak self] in
@@ -870,6 +878,19 @@ final class DockController {
         case .minimized(let objWindow, let objApp):
             objGrid.hide()
             objWindowService.raise(objWindow, of: objApp)
+        case .widget(.nowPlaying):
+            objGrid.hide()
+            objNowPlaying.send(.togglePlayPause)
+        case .widget(.battery):
+            objGrid.hide()
+            Self.openBatterySettings()
+        }
+    }
+
+    /// Opens System Settings › Battery.
+    private static func openBatterySettings() {
+        if let objUrl = URL(string: "x-apple.systempreferences:com.apple.Battery-Settings.extension") {
+            NSWorkspace.shared.open(objUrl)
         }
     }
 
@@ -1237,6 +1258,54 @@ final class DockController {
             })
             objMenu.addItem(ClosureMenuItem("Close Window") { [weak self] in
                 self?.objWindowService.close(objWindow)
+            })
+            return objMenu
+
+        case .widget(.nowPlaying):
+            let objMenu = NSMenu()
+            if let objTrack = objNowPlaying.objTrack {
+                objMenu.addItem(NSMenuItem.sectionHeader(title: objTrack.strTitle))
+                if !objTrack.strArtist.isEmpty {
+                    let objArtist = NSMenuItem(title: objTrack.strArtist, action: nil, keyEquivalent: "")
+                    objArtist.isEnabled = false
+                    objMenu.addItem(objArtist)
+                }
+                objMenu.addItem(.separator())
+            }
+            objMenu.addItem(ClosureMenuItem(objNowPlaying.blnIsPlaying ? "Pause" : "Play") { [weak self] in
+                self?.objNowPlaying.send(.togglePlayPause)
+            })
+            objMenu.addItem(ClosureMenuItem("Next") { [weak self] in
+                self?.objNowPlaying.send(.nextTrack)
+            })
+            objMenu.addItem(ClosureMenuItem("Previous") { [weak self] in
+                self?.objNowPlaying.send(.previousTrack)
+            })
+            // Jump to the app that's playing.
+            if let strBundleId = objNowPlaying.objTrack?.strBundleId,
+               let objApp = NSRunningApplication.runningApplications(withBundleIdentifier: strBundleId).first {
+                objMenu.addItem(.separator())
+                let objShow = ClosureMenuItem("Show \(objApp.localizedName ?? "App")") {
+                    objApp.activate()
+                }
+                objShow.image = objApp.icon.map(Self.menuIcon)
+                objMenu.addItem(objShow)
+            }
+            objMenu.addItem(.separator())
+            objMenu.addItem(ClosureMenuItem("Hide Now Playing Widget") { [weak self] in
+                self?.objSettings.blnShowNowPlaying = false
+            })
+            return objMenu
+
+        case .widget(.battery):
+            let objMenu = NSMenu()
+            objMenu.addItem(NSMenuItem.sectionHeader(title: objItem.strName))
+            objMenu.addItem(ClosureMenuItem("Battery Settings…") {
+                Self.openBatterySettings()
+            })
+            objMenu.addItem(.separator())
+            objMenu.addItem(ClosureMenuItem("Hide Battery Widget") { [weak self] in
+                self?.objSettings.blnShowBattery = false
             })
             return objMenu
         }

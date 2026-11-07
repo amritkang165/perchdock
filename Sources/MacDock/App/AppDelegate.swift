@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let objThumbnailService = ThumbnailService()
     private let objNewWindowTracker = NewWindowTracker()
     private let objDockBadges = DockBadgeService()
+    private let objNowPlaying = NowPlayingService()
+    private let objBattery = BatteryService()
     private let objNativeDock = NativeDockController()
     private let objUpdates = UpdateController()
     private lazy var objSettingsWindow = SettingsWindowController(objSettings: objSettings, objThumbnailService: objThumbnailService)
@@ -39,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         objAppTracker.start()
         objNewWindowTracker.start()
         objDockBadges.start()
+        startWidgets()
         // Raising a window from the dock means the user has seen it.
         objWindowService.onRaised = { [weak self] intWindowId in
             self?.objNewWindowTracker.markSeen(intWindowId)
@@ -50,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             objThumbnailService: objThumbnailService,
             objNewWindowTracker: objNewWindowTracker,
             objBadges: objDockBadges,
+            objNowPlaying: objNowPlaying,
+            objBattery: objBattery,
             objSettings: objSettings
         )
         objController.onOpenSettings = { [weak self] in
@@ -62,9 +67,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runDebugArguments(objController)
     }
 
+    /// Starts the widget services and tells the dock which widget tiles to show.
+    ///
+    /// Tiles draw live from the services; the dock only rebuilds when a tile should
+    /// appear/disappear or its hover label (track name, battery summary) changes.
+    private func startWidgets() {
+        objAppTracker.fnWidgets = { [weak self] in
+            guard let self else { return [] }
+            var arrObjTiles: [AppTracker.WidgetTile] = []
+            if self.objSettings.blnShowNowPlaying, let objTrack = self.objNowPlaying.objTrack {
+                let strName = objTrack.strArtist.isEmpty ? objTrack.strTitle : "\(objTrack.strTitle) — \(objTrack.strArtist)"
+                arrObjTiles.append(AppTracker.WidgetTile(
+                    enmWidget: .nowPlaying, strName: strName,
+                    objIcon: objTrack.objArtwork ?? NowPlayingTileView.appIcon(for: objTrack.strBundleId)
+                ))
+            }
+            if self.objSettings.blnShowBattery, self.objBattery.blnHasBattery {
+                arrObjTiles.append(AppTracker.WidgetTile(
+                    enmWidget: .battery, strName: self.objBattery.strSummary,
+                    objIcon: NSImage(systemSymbolName: "battery.100", accessibilityDescription: "Battery") ?? NSImage()
+                ))
+            }
+            return arrObjTiles
+        }
+        objNowPlaying.onChange = { [weak self] in self?.objAppTracker.rebuild() }
+        objBattery.onChange = { [weak self] in self?.objAppTracker.rebuild() }
+        objNowPlaying.start()
+        objBattery.start()
+    }
+
     /// Restores the native Dock on a normal quit so the user is never left without one.
     /// - Parameter notification: Termination notification (unused).
     func applicationWillTerminate(_ notification: Notification) {
+        objNowPlaying.stop()
         if objNativeDock.blnIsHiddenByUs {
             objNativeDock.restore()
         }

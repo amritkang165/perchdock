@@ -17,6 +17,14 @@ struct DockItem: Identifiable {
         case trash(blnIsFull: Bool)
         /// A minimized window.
         case minimized(objWindow: WindowInfo, objApp: NSRunningApplication)
+        /// A live widget tile (now playing, battery).
+        case widget(Widget)
+    }
+
+    /// Widget tiles the dock can show.
+    enum Widget: String, CaseIterable {
+        case nowPlaying
+        case battery
     }
 
     /// Stable ID: the pinned token (bundle ID for apps) or a synthetic ID.
@@ -51,8 +59,14 @@ struct DockItem: Identifiable {
         case .app: true
         case .divider(let blnIsAuto): !blnIsAuto
         case .group, .folder: true
-        case .trash, .minimized: false
+        case .trash, .minimized, .widget: false
         }
+    }
+
+    /// The widget this tile shows, if it's a widget.
+    var enmWidget: Widget? {
+        if case .widget(let enmWidget) = enmKind { return enmWidget }
+        return nil
     }
 }
 
@@ -75,6 +89,16 @@ final class AppTracker {
 
     /// Bundle ID of the frontmost app, for the active indicator.
     private(set) var strActiveBundleId: String?
+
+    /// A widget to show, with the name (hover label) and icon (fallback image) to use.
+    struct WidgetTile {
+        let enmWidget: DockItem.Widget
+        let strName: String
+        let objIcon: NSImage
+    }
+
+    /// Widgets to show on the right, in order (set by the app; empty when unset).
+    @ObservationIgnored var fnWidgets: (() -> [WidgetTile])?
 
     /// Called after the set or order of items changes so the panel can resize.
     @ObservationIgnored var onItemsChanged: (() -> Void)?
@@ -421,12 +445,24 @@ final class AppTracker {
             arrObjNewItems += arrObjRunningItems
         }
 
-        // 3. Right-hand folder stacks, minimized windows and the Trash.
+        // 3. Right-hand folder stacks, widgets, minimized windows and the Trash.
         var arrObjTrailing: [DockItem] = []
         for strToken in objSettings.arrStrTrailingPinned {
             guard case .folder(let strPath) = PinnedToken(strToken),
                   let objFolder = makeFolder(strToken: strToken, strPath: strPath, blnIsTrailing: true) else { continue }
             arrObjTrailing.append(objFolder)
+        }
+        // Widgets go after the stacks, so folder drop slots stay contiguous.
+        for objTile in fnWidgets?() ?? [] {
+            arrObjTrailing.append(DockItem(
+                strBundleId: "widget:" + objTile.enmWidget.rawValue,
+                enmKind: .widget(objTile.enmWidget),
+                strName: objTile.strName,
+                objIcon: objTile.objIcon,
+                objAppUrl: nil,
+                objRunningApp: nil,
+                blnIsPinned: false
+            ))
         }
         if objSettings.blnShowMinimized {
             for objMinimized in objMinimized.arrObjWindows {

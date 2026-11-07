@@ -208,6 +208,8 @@ final class SettingsStore {
         static let strTrailingPinned = "TrailingPinned"
         static let strCurrentDesktopOnly = "CurrentDesktopOnly"
         static let strPeek = "Peek"
+        static let strShowNowPlaying = "ShowNowPlayingWidget"
+        static let strShowBattery = "ShowBatteryWidget"
     }
 
     /// Pins used on first launch.
@@ -293,6 +295,12 @@ final class SettingsStore {
     /// Whether minimized windows get their own tiles at the end of the dock.
     var blnShowMinimized: Bool { didSet { objDefaults.set(blnShowMinimized, forKey: Key.strShowMinimized) } }
 
+    /// Whether a Now Playing widget appears while something is playing (or paused).
+    var blnShowNowPlaying: Bool { didSet { objDefaults.set(blnShowNowPlaying, forKey: Key.strShowNowPlaying) } }
+
+    /// Whether a battery widget appears (on Macs with a battery).
+    var blnShowBattery: Bool { didSet { objDefaults.set(blnShowBattery, forKey: Key.strShowBattery) } }
+
     /// Color wash over the glass.
     var enmTint: DockTint { didSet { objDefaults.set(enmTint.rawValue, forKey: Key.strTint) } }
 
@@ -344,6 +352,8 @@ final class SettingsStore {
             Key.strCompact: false,
             Key.strIndicatorStyle: IndicatorStyle.dot.rawValue,
             Key.strPeek: true,
+            Key.strShowNowPlaying: true,
+            Key.strShowBattery: true,
         ])
 
         fltIconSize = objDefaults.double(forKey: Key.strIconSize)
@@ -367,6 +377,8 @@ final class SettingsStore {
             .flatMap { try? JSONDecoder().decode([String: DockGroup].self, from: $0) } ?? [:]
         blnShowTrash = objDefaults.bool(forKey: Key.strShowTrash)
         blnShowMinimized = objDefaults.bool(forKey: Key.strShowMinimized)
+        blnShowNowPlaying = objDefaults.bool(forKey: Key.strShowNowPlaying)
+        blnShowBattery = objDefaults.bool(forKey: Key.strShowBattery)
         enmTint = DockTint(rawValue: objDefaults.string(forKey: Key.strTint) ?? "") ?? .none
         strTintHex = objDefaults.string(forKey: Key.strTintHex) ?? "#3B82F6"
         fltTintStrength = objDefaults.double(forKey: Key.strTintStrength)
