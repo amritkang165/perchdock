@@ -441,9 +441,9 @@ final class AppTracker {
     private func signature(of arrObjItems: [DockItem]) -> [String] {
         arrObjItems.map { objItem in
             var strSignature = objItem.strBundleId + (objItem.blnIsPinned ? "|p" : "")
-            if case .group(let strGroupId, let arrObjMembers) = objItem.enmKind {
-                strSignature += "|" + arrObjMembers.map(\.strBundleId).joined(separator: ",") + "|" + objItem.strName
-                strSignature += "|" + (objSettings.dictObjGroups[strGroupId]?.strColorHex ?? "")
+            // Name and color changes redraw without a relayout (which would close open popovers).
+            if case .group(_, let arrObjMembers) = objItem.enmKind {
+                strSignature += "|" + arrObjMembers.map(\.strBundleId).joined(separator: ",")
             }
             if case .trash(let blnIsFull) = objItem.enmKind {
                 strSignature += blnIsFull ? "|full" : "|empty"

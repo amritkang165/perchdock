@@ -46,6 +46,7 @@ enum GridPopoverLayout {
 
     /// What a point (top-left origin) is over.
     enum Hit: Equatable {
+        case title
         case tile(Int)
         case footer
     }
@@ -60,6 +61,9 @@ enum GridPopoverLayout {
         let objSize = size(forCount: intCount, blnFooter: blnFooter)
         if blnFooter && objPoint.y > objSize.height - fltFooterHeight - fltPadding / 2 {
             return .footer
+        }
+        if objPoint.y < fltHeaderHeight + fltPadding / 2 {
+            return .title
         }
         let intColumns = columns(forCount: intCount)
         // Center the grid when the minimum width is wider than the tiles.
@@ -86,6 +90,10 @@ final class GridPopoverState {
     /// Light color wash (a group's color), or `nil`.
     var objTint: Color?
     var objHovered: GridPopoverLayout.Hit?
+    /// Whether clicking the title renames it (groups, not folders).
+    var blnTitleEditable = false
+    /// Hides the SwiftUI title while the inline text field covers it.
+    var blnEditingTitle = false
 }
 
 /// Grid of tiles in a glass card.
@@ -98,11 +106,25 @@ struct GridPopoverView: View {
         let arrObjColumns = Array(repeating: GridItem(.fixed(GridPopoverLayout.fltTileWidth), spacing: 0), count: intColumns)
 
         VStack(spacing: 0) {
-            Text(objState.strTitle)
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-                .frame(height: GridPopoverLayout.fltHeaderHeight)
-                .padding(.top, GridPopoverLayout.fltPadding / 2)
+            // Editable titles hint on hover: a pill behind the name and a pencil.
+            let blnTitleHovered = objState.blnTitleEditable && objState.objHovered == .title
+            HStack(spacing: 4) {
+                Text(objState.strTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                if blnTitleHovered {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.primary.opacity(blnTitleHovered ? 0.1 : 0)))
+            .opacity(objState.blnEditingTitle ? 0 : 1)
+            .frame(height: GridPopoverLayout.fltHeaderHeight)
+            .padding(.top, GridPopoverLayout.fltPadding / 2)
 
             if arrObjEntries.isEmpty {
                 Text(objState.strEmptyText)
@@ -165,7 +187,7 @@ struct GridPopoverView: View {
 /// Shows a group's apps or a folder's files as a grid above their dock icon.
 /// Stays open until a tile is chosen, the user clicks elsewhere, or presses Escape.
 @MainActor
-final class GridPopoverController: NSObject, NSDraggingSource {
+final class GridPopoverController: NSObject, NSDraggingSource, NSTextFieldDelegate {
     private let objState = GridPopoverState()
     private let objPanel: DockPanel
     private let objHostingView: TrackingHostingView<GridPopoverView>
@@ -188,6 +210,15 @@ final class GridPopoverController: NSObject, NSDraggingSource {
     var onFooter: (() -> Void)?
     /// Popover closed.
     var onHide: (() -> Void)?
+    /// Title edited inline; set to make the title clickable (groups).
+    var onRename: ((String) -> Void)? {
+        didSet { objState.blnTitleEditable = onRename != nil }
+    }
+
+    /// Inline title editor, while renaming.
+    private var objTitleField: NSTextField?
+    /// App that was frontmost before the field took the keyboard (gets it back after).
+    private var objPreviousApp: NSRunningApplication?
 
     override init() {
         objPanel = DockPanel(contentRect: .zero)
@@ -273,6 +304,8 @@ final class GridPopoverController: NSObject, NSDraggingSource {
     func hide() {
         guard blnIsVisible else { return }
         strAnchorId = nil
+        // Clicking away while renaming keeps the new name, like Finder.
+        endTitleEditing(blnCommit: true)
         removeMonitors()
         NSAnimationContext.runAnimationGroup({ objContext in
             objContext.duration = 0.1
@@ -342,10 +375,92 @@ final class GridPopoverController: NSObject, NSDraggingSource {
         defer { objPressPoint = nil }
         guard !blnDragStarted else { return }
         switch hit(objPoint) {
+        case .title where onRename != nil: beginTitleEditing()
         case .tile(let intIndex): onSelect?(intIndex)
         case .footer: onFooter?()
-        case nil: break
+        case .title, nil: break
         }
+    }
+
+    // MARK: - Inline rename
+
+    /// Swaps the title for a text field and gives the popover the keyboard.
+    private func beginTitleEditing() {
+        guard objTitleField == nil else { return }
+
+        let objField = NSTextField(string: objState.strTitle)
+        objField.alignment = .center
+        objField.font = .systemFont(ofSize: 13, weight: .semibold)
+        objField.isBordered = false
+        objField.drawsBackground = true
+        objField.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.85)
+        objField.focusRingType = .exterior
+        objField.wantsLayer = true
+        objField.layer?.cornerRadius = 5
+        objField.delegate = self
+        objField.target = self
+        objField.action = #selector(commitTitle)
+
+        // Over the header (AppKit's origin is bottom-left).
+        let fltWidth = min(objHostingView.bounds.width - 40, 220)
+        let fltHeight: CGFloat = 22
+        let fltHeaderMidY = objHostingView.bounds.height - GridPopoverLayout.fltPadding / 2 - GridPopoverLayout.fltHeaderHeight / 2
+        objField.frame = NSRect(x: (objHostingView.bounds.width - fltWidth) / 2, y: fltHeaderMidY - fltHeight / 2,
+                                width: fltWidth, height: fltHeight)
+        objHostingView.addSubview(objField)
+        objTitleField = objField
+        objState.blnEditingTitle = true
+
+        // Typing needs a key window, which needs MacDock active for a moment.
+        objPreviousApp = NSWorkspace.shared.frontmostApplication
+        objPanel.blnAllowsKey = true
+        NSApp.activate()
+        objPanel.makeKey()
+        objPanel.makeFirstResponder(objField)
+        objField.currentEditor()?.selectAll(nil)
+    }
+
+    /// Return pressed: save the name.
+    @objc private func commitTitle() {
+        endTitleEditing(blnCommit: true)
+    }
+
+    /// Escape cancels; other commands go through.
+    /// - Parameters:
+    ///   - control: The field.
+    ///   - textView: Its editor.
+    ///   - commandSelector: Command being run.
+    /// - Returns: `true` when handled here.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            endTitleEditing(blnCommit: false)
+            return true
+        }
+        return false
+    }
+
+    /// Removes the field, saves (if asked and changed), and hands the keyboard back.
+    /// - Parameter blnCommit: Whether to keep the typed name.
+    private func endTitleEditing(blnCommit: Bool) {
+        guard let objField = objTitleField else { return }
+        objTitleField = nil
+        let strName = objField.stringValue.trimmingCharacters(in: .whitespaces)
+        objField.delegate = nil
+        objField.removeFromSuperview()
+        objState.blnEditingTitle = false
+
+        if blnCommit, !strName.isEmpty, strName != objState.strTitle {
+            objState.strTitle = strName
+            onRename?(strName)
+        }
+
+        objPanel.blnAllowsKey = false
+        objPanel.resignKey()
+        // Give focus back to whatever the user was using.
+        if let objPreviousApp, objPreviousApp != NSRunningApplication.current {
+            objPreviousApp.activate()
+        }
+        objPreviousApp = nil
     }
 
     /// Starts dragging a file out of a folder stack (to Finder, Mail, …).

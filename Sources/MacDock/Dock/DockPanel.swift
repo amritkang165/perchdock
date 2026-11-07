@@ -38,8 +38,11 @@ final class DockPanel: NSPanel {
         frameRect
     }
 
-    /// Never become key, so keystrokes keep going to the user's app.
-    override var canBecomeKey: Bool { false }
+    /// Lets a panel take the keyboard temporarily (e.g. to type a group name).
+    var blnAllowsKey = false
+
+    /// Normally never key, so keystrokes keep going to the user's app.
+    override var canBecomeKey: Bool { blnAllowsKey }
 
     /// Never become main.
     override var canBecomeMain: Bool { false }

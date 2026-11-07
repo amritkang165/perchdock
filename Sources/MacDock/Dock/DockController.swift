@@ -1494,6 +1494,10 @@ final class DockController {
                 NSMenu.popUpContextMenu(objMenu, with: objEvent, for: self.objHostingView)
             }
             objGrid.onFooter = nil
+            // Click the group's name in the popover to rename it in place.
+            objGrid.onRename = { [weak self] strName in
+                self?.objTracker.renameGroup(strGroupId, to: strName)
+            }
             objGrid.show(
                 strTitle: objItem.strName,
                 arrObjEntries: arrObjMembers.map { GridEntry(id: $0.strBundleId, strName: $0.strName, objIcon: $0.objIcon, blnIsRunning: $0.blnIsRunning) },
@@ -1527,6 +1531,7 @@ final class DockController {
                 self?.objGrid.hide()
                 NSWorkspace.shared.open(objFolder)
             }
+            objGrid.onRename = nil
             objGrid.show(
                 strTitle: objItem.strName,
                 arrObjEntries: arrObjEntries,
