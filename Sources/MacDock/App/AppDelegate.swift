@@ -177,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Handles debug launch arguments.
     /// - `--cycle-pickers`: stress-tests picker switching.
     /// - `--dump-windows`: logs every app's windows.
+    /// - `--dump-recents=BUNDLE_ID,…`: writes apps' recent documents to /tmp/macdock-recents.txt.
     /// - `--open-settings`: opens the Settings window.
     /// - Parameter objController: The dock controller.
     private func runDebugArguments(_ objController: DockController) {
@@ -268,6 +269,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if arrStrArgs.contains("--fake-badges") {
             objDockBadges.debugFake(strBadgeId: "com.google.Chrome", strProgressId: "com.apple.finder")
+        }
+        // `--dump-recents=BUNDLE_ID[,BUNDLE_ID…]`: writes each app's recent documents to /tmp/macdock-recents.txt.
+        if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--dump-recents=") }) {
+            var strReport = ""
+            for strId in strArg.dropFirst("--dump-recents=".count).split(separator: ",").map(String.init) {
+                let objStart = ContinuousClock.now
+                let arrObjDocs = RecentDocumentsService.documents(
+                    forBundleId: strId, objAppUrl: NSWorkspace.shared.urlForApplication(withBundleIdentifier: strId))
+                strReport += "\(strId) (\(ContinuousClock.now - objStart)):\n"
+                strReport += arrObjDocs.map { "  \($0.path)\n" }.joined()
+            }
+            try? strReport.write(toFile: "/tmp/macdock-recents.txt", atomically: true, encoding: .utf8)
         }
         if arrStrArgs.contains("--dump-dock") {
             objDockBadges.debugDump(objLogger: Logger(subsystem: "com.slynck.macdock", category: "dump"))

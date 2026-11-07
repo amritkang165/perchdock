@@ -887,6 +887,23 @@ final class DockController {
         }
     }
 
+    /// Opens a recent document in the app it was listed under (bouncing if it launches).
+    /// - Parameters:
+    ///   - objDocument: File.
+    ///   - objAppUrl: App bundle (falls back to the file's default app).
+    ///   - strBundleId: App's bundle ID, for the launch bounce.
+    private func openDocument(_ objDocument: URL, withAppAt objAppUrl: URL?, strBundleId: String) {
+        guard let objAppUrl else {
+            NSWorkspace.shared.open(objDocument)
+            return
+        }
+        let blnWasRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: strBundleId).isEmpty
+        NSWorkspace.shared.open([objDocument], withApplicationAt: objAppUrl, configuration: NSWorkspace.OpenConfiguration())
+        if !blnWasRunning {
+            trackLaunch(of: strBundleId)
+        }
+    }
+
     /// Opens System Settings › Battery.
     private static func openBatterySettings() {
         if let objUrl = URL(string: "x-apple.systempreferences:com.apple.Battery-Settings.extension") {
@@ -1404,6 +1421,23 @@ final class DockController {
                 }
                 objMenu.addItem(.separator())
             }
+        }
+
+        // Recent documents, opened with this app.
+        let objAppUrl = objItem.objAppUrl ?? objApp?.bundleURL
+        let arrObjRecents = RecentDocumentsService.documents(forBundleId: objItem.strBundleId, objAppUrl: objAppUrl)
+        if !arrObjRecents.isEmpty {
+            objMenu.addItem(NSMenuItem.sectionHeader(title: "Recent Documents"))
+            for objDocument in arrObjRecents {
+                let objEntry = ClosureMenuItem(FileManager.default.displayName(atPath: objDocument.path)) { [weak self] in
+                    self?.openDocument(objDocument, withAppAt: objAppUrl, strBundleId: objItem.strBundleId)
+                }
+                objEntry.image = Self.menuIcon(NSWorkspace.shared.icon(forFile: objDocument.path))
+                // Full path on hover, to tell same-named files apart.
+                objEntry.toolTip = (objDocument.path as NSString).abbreviatingWithTildeInPath
+                objMenu.addItem(objEntry)
+            }
+            objMenu.addItem(.separator())
         }
 
         let strId = objItem.strBundleId
