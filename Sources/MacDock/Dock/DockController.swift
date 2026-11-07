@@ -704,6 +704,7 @@ final class DockController {
     private func showPicker(forIndex intIndex: Int, arrObjWindows: [WindowInfo]?) {
         guard blnShown, let objItem = objTracker.arrObjItems[safe: intIndex] else { return }
         objPicker.blnLivePreviews = objSettings.blnLivePreviews
+        objPicker.blnReduceOnBattery = objSettings.blnReducePreviewsOnBattery
 
         guard let objApp = objItem.objRunningApp, !objApp.isTerminated else {
             hidePicker()

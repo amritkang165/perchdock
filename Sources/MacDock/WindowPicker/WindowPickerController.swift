@@ -34,6 +34,12 @@ final class WindowPickerController {
     /// Whether thumbnails keep refreshing while the picker is open.
     var blnLivePreviews = true
 
+    /// Whether live previews drop to 30 fps on battery or in Low Power Mode.
+    var blnReduceOnBattery: Bool {
+        get { objLivePreviewService.blnReduceOnBattery }
+        set { objLivePreviewService.blnReduceOnBattery = newValue }
+    }
+
     /// Dock edge, which decides whether the picker opens above or beside the icon.
     var enmPosition: DockPosition = .bottom
 

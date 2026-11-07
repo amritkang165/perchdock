@@ -60,6 +60,7 @@ final class SettingsStore {
         static let strPinned = "PinnedBundleIds"
         static let strShowLabels = "ShowLabels"
         static let strLivePreviews = "LivePreviews"
+        static let strReducePreviewsOnBattery = "ReducePreviewsOnBattery"
         static let strDisplayMode = "DisplayMode"
     }
 
@@ -116,6 +117,9 @@ final class SettingsStore {
     /// Whether window previews keep updating while the picker is open.
     var blnLivePreviews: Bool { didSet { objDefaults.set(blnLivePreviews, forKey: Key.strLivePreviews) } }
 
+    /// Whether live previews drop to 30 fps on battery or in Low Power Mode.
+    var blnReducePreviewsOnBattery: Bool { didSet { objDefaults.set(blnReducePreviewsOnBattery, forKey: Key.strReducePreviewsOnBattery) } }
+
     /// Which display the dock lives on.
     var enmDisplayMode: DockDisplayMode { didSet { objDefaults.set(enmDisplayMode.rawValue, forKey: Key.strDisplayMode) } }
 
@@ -145,6 +149,7 @@ final class SettingsStore {
             Key.strPinned: Self.arrStrDefaultPinned,
             Key.strShowLabels: true,
             Key.strLivePreviews: true,
+            Key.strReducePreviewsOnBattery: true,
             Key.strDisplayMode: DockDisplayMode.main.rawValue,
         ])
 
@@ -160,6 +165,7 @@ final class SettingsStore {
         arrStrPinnedBundleIds = objDefaults.stringArray(forKey: Key.strPinned) ?? Self.arrStrDefaultPinned
         blnShowLabels = objDefaults.bool(forKey: Key.strShowLabels)
         blnLivePreviews = objDefaults.bool(forKey: Key.strLivePreviews)
+        blnReducePreviewsOnBattery = objDefaults.bool(forKey: Key.strReducePreviewsOnBattery)
         enmDisplayMode = DockDisplayMode(rawValue: objDefaults.string(forKey: Key.strDisplayMode) ?? "") ?? .main
         blnLaunchAtLogin = SMAppService.mainApp.status == .enabled
     }

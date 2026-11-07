@@ -91,8 +91,10 @@ private struct BehaviorTab: View {
                     String(format: "%.2fs", $0)
                 }
                 Toggle("Live previews", isOn: $objSettings.blnLivePreviews)
+                Toggle("Reduce to 30 fps on battery", isOn: $objSettings.blnReducePreviewsOnBattery)
+                    .disabled(!objSettings.blnLivePreviews)
             } footer: {
-                Text("How long to hover an icon before its windows appear. Live previews keep updating while open; windows on other desktops show their last snapshot.")
+                Text("The delay is how long to hover an icon before its windows appear. Live previews play at 60 fps while open and stop when closed. Windows on other desktops show their last snapshot. Battery saving also applies in Low Power Mode.")
                     .foregroundStyle(.secondary)
             }
         }

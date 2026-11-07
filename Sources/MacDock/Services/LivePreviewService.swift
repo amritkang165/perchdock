@@ -1,5 +1,6 @@
 import AppKit
 import CoreMedia
+import IOKit.ps
 import os
 @preconcurrency import ScreenCaptureKit
 
@@ -9,8 +10,28 @@ import os
 /// window's content changes, so idle windows cost almost nothing.
 @MainActor
 final class LivePreviewService {
-    /// Target refresh rate.
-    private static let intFramesPerSecond: Int32 = 60
+    /// Full refresh rate, and the reduced rate used to save battery.
+    private static let intFullFps: Int32 = 60
+    private static let intReducedFps: Int32 = 30
+
+    /// Whether to drop to the reduced rate on battery or in Low Power Mode.
+    var blnReduceOnBattery = true
+
+    /// Frame rate for streams started now.
+    private var intFramesPerSecond: Int32 {
+        guard blnReduceOnBattery else { return Self.intFullFps }
+        return Self.blnIsSavingPower ? Self.intReducedFps : Self.intFullFps
+    }
+
+    /// Whether the Mac is running on battery or in Low Power Mode.
+    private static var blnIsSavingPower: Bool {
+        if ProcessInfo.processInfo.isLowPowerModeEnabled {
+            return true
+        }
+        guard let objInfo = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let strSource = IOPSGetProvidingPowerSourceType(objInfo)?.takeUnretainedValue() as String? else { return false }
+        return strSource == kIOPMBatteryPowerKey
+    }
 
     /// Longest edges of a streamed frame, in pixels (2x the card size).
     private static let fltMaxPixelWidth: CGFloat = 400
@@ -76,7 +97,7 @@ final class LivePreviewService {
         objConfig.height = max(1, Int((objSize.height * fltScale).rounded()))
         objConfig.scalesToFit = true
         objConfig.preservesAspectRatio = true
-        objConfig.minimumFrameInterval = CMTime(value: 1, timescale: Self.intFramesPerSecond)
+        objConfig.minimumFrameInterval = CMTime(value: 1, timescale: intFramesPerSecond)
         objConfig.queueDepth = 3
         objConfig.pixelFormat = kCVPixelFormatType_32BGRA
         objConfig.showsCursor = false
