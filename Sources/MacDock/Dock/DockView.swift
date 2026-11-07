@@ -5,62 +5,85 @@ import Observation
 @MainActor
 @Observable
 final class DockState {
-    /// Index of the icon under the mouse, if any.
+    /// Cursor position along the bar while hovering, driving magnification.
+    var fltMouseMain: CGFloat?
+    /// Index of the icon under the cursor.
     var intHoveredIndex: Int?
+    /// In-progress drag, if any.
+    var objDrag: DockDrag?
 }
 
-/// The dock bar: a glass strip of app icons with running indicators.
+/// The dock: a glass bar with icons placed at exact positions, so magnification,
+/// drag-reorder and every screen edge share one layout model (`DockGeometry`).
 struct DockView: View {
     let objTracker: AppTracker
+    let objSettings: SettingsStore
     let objState: DockState
 
     var body: some View {
-        // Bottom-aligned so the headroom above the bar stays transparent.
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
+        let arrObjItems = objTracker.arrObjItems
+        let objGeometry = DockGeometry(objSettings: objSettings, intCount: arrObjItems.count)
+        let objLayout = objState.objDrag.map { objGeometry.layout(dragging: $0) }
+            ?? objGeometry.layout(mouseMain: objState.fltMouseMain)
 
-            HStack(spacing: DockLayout.fltIconSpacing) {
-                ForEach(Array(objTracker.arrObjItems.enumerated()), id: \.element.id) { intIndex, objItem in
-                    DockIconView(
-                        objItem: objItem,
-                        blnIsHovered: objState.intHoveredIndex == intIndex,
-                        blnIsActive: objTracker.strActiveBundleId == objItem.strBundleId
-                    )
-                    .transition(.scale(scale: 0.4).combined(with: .opacity))
-                }
+        ZStack(alignment: .topLeading) {
+            barBackground(objGeometry: objGeometry, objLayout: objLayout)
+
+            ForEach(Array(arrObjItems.enumerated()), id: \.element.id) { intIndex, objItem in
+                let fltCenter = objLayout.arrFltCenters[safe: intIndex] ?? objGeometry.baseCenter(intIndex)
+                let fltSize = objLayout.arrFltSizes[safe: intIndex] ?? objGeometry.fltIconSize
+                let blnIsDragged = objState.objDrag?.intIndex == intIndex
+
+                Image(nsImage: objItem.objIcon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: fltSize, height: fltSize)
+                    // The dragged icon is drawn by the floating drag panel instead.
+                    .opacity(blnIsDragged ? 0 : 1)
+                    .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.iconCross(forSize: fltSize)))
+                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+
+                Circle()
+                    .fill(Color.primary.opacity(objTracker.strActiveBundleId == objItem.strBundleId ? 0.9 : 0.55))
+                    .frame(width: 4, height: 4)
+                    .opacity(objItem.blnIsRunning && !blnIsDragged ? 1 : 0)
+                    .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.fltIndicatorCross))
             }
-            .padding(DockLayout.fltBarPadding)
-            .frame(height: DockLayout.fltBarHeight)
-            .dockGlass(cornerRadius: DockLayout.fltCornerRadius)
-            .animation(.spring(response: 0.28, dampingFraction: 0.82), value: objTracker.arrObjItems.map(\.id))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .frame(width: objGeometry.objPanelSize.width, height: objGeometry.objPanelSize.height, alignment: .topLeading)
+        // Short springs: tight enough to track the cursor, soft enough to feel fluid.
+        .animation(.interactiveSpring(response: 0.14, dampingFraction: 0.86), value: objState.fltMouseMain)
+        .animation(.spring(response: 0.24, dampingFraction: 0.82), value: objState.objDrag)
+        .animation(.spring(response: 0.28, dampingFraction: 0.82), value: arrObjItems.map(\.id))
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.fltIconSize)
+    }
+
+    /// Glass bar spanning the (possibly magnified) icons.
+    /// - Parameters:
+    ///   - objGeometry: Current geometry.
+    ///   - objLayout: Current layout.
+    /// - Returns: The positioned background.
+    private func barBackground(objGeometry: DockGeometry, objLayout: DockGeometry.Layout) -> some View {
+        let fltLength = max(objLayout.fltBarEnd - objLayout.fltBarStart, 0)
+        let fltThickness = objGeometry.fltBarThickness
+        let objCenter = objGeometry.viewPoint(
+            main: (objLayout.fltBarStart + objLayout.fltBarEnd) / 2,
+            cross: fltThickness / 2
+        )
+        let objSize = objGeometry.enmPosition.blnIsVertical
+            ? CGSize(width: fltThickness, height: fltLength)
+            : CGSize(width: fltLength, height: fltThickness)
+
+        return Color.clear
+            .frame(width: objSize.width, height: objSize.height)
+            .dockGlass(cornerRadius: objGeometry.fltCornerRadius)
+            .position(objCenter)
     }
 }
 
-/// One app icon with a hover zoom and a running dot.
-private struct DockIconView: View {
-    let objItem: DockItem
-    let blnIsHovered: Bool
-    let blnIsActive: Bool
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Image(nsImage: objItem.objIcon)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: DockLayout.fltIconSize, height: DockLayout.fltIconSize)
-                // Zoom from the bottom edge so the icon grows up into the headroom.
-                .scaleEffect(blnIsHovered ? DockLayout.fltHoverScale : 1, anchor: .bottom)
-                .animation(.spring(response: 0.2, dampingFraction: 0.72), value: blnIsHovered)
-
-            Circle()
-                .fill(Color.primary.opacity(blnIsActive ? 0.9 : 0.55))
-                .frame(width: 4, height: 4)
-                .opacity(objItem.blnIsRunning ? 1 : 0)
-                .animation(.easeOut(duration: 0.15), value: objItem.blnIsRunning)
-        }
-        .frame(height: DockLayout.fltIconSize + DockLayout.fltIndicatorHeight)
-        .help(objItem.strName)
+extension Array {
+    /// Element at `intIndex`, or `nil` when out of range (layouts can lag a frame behind item changes).
+    subscript(safe intIndex: Int) -> Element? {
+        indices.contains(intIndex) ? self[intIndex] : nil
     }
 }

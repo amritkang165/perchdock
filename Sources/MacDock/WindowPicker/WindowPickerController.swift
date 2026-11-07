@@ -30,6 +30,9 @@ final class WindowPickerController {
     /// Fired when the user clicks a card's close button.
     var onCloseWindow: ((WindowInfo) -> Void)?
 
+    /// Dock edge, which decides whether the picker opens above or beside the icon.
+    var enmPosition: DockPosition = .bottom
+
     /// Builds the (initially hidden) picker panel.
     /// - Parameter objThumbnailService: Source of window thumbnails.
     init(objThumbnailService: ThumbnailService) {
@@ -40,6 +43,9 @@ final class WindowPickerController {
 
         objHostingView.onMouseMoved = { [weak self] objPoint in
             self?.handleMouseMoved(objPoint)
+        }
+        objHostingView.onMouseExited = { [weak self] in
+            self?.handleMouseMoved(nil)
         }
         objHostingView.onMouseUp = { [weak self] objPoint in
             self?.handleClick(objPoint)
@@ -112,7 +118,7 @@ final class WindowPickerController {
     /// - Parameters:
     ///   - strAppName: Header text.
     ///   - intAnchorIndex: Dock item index the picker belongs to.
-    ///   - objAnchorPoint: Screen point at the top-center of the icon.
+    ///   - objAnchorPoint: Screen point on the icon's outer edge (away from the screen edge).
     private func present(strAppName: String, intAnchorIndex: Int, objAnchorPoint: CGPoint) {
         objState.strAppName = strAppName
         objState.objHoveredHit = nil
@@ -120,15 +126,14 @@ final class WindowPickerController {
         objLastAnchorPoint = objAnchorPoint
 
         let objSize = WindowPickerLayout.size(forCount: objState.arrObjWindows.count, blnNotice: objState.blnNeedsPermission)
-        var fltOriginX = objAnchorPoint.x - objSize.width / 2
+        let objFinalFrame = frame(forSize: objSize, objAnchorPoint: objAnchorPoint)
 
-        // Keep the picker fully on screen near the screen edges.
-        if let objScreen = NSScreen.screens.first(where: { $0.frame.contains(objAnchorPoint) }) ?? NSScreen.main {
-            let objBounds = objScreen.frame.insetBy(dx: 8, dy: 0)
-            fltOriginX = min(max(fltOriginX, objBounds.minX), objBounds.maxX - objSize.width)
+        // Slide in from the dock's direction.
+        let objEntryOffset: CGVector = switch enmPosition {
+        case .bottom: CGVector(dx: 0, dy: -6)
+        case .left: CGVector(dx: -6, dy: 0)
+        case .right: CGVector(dx: 6, dy: 0)
         }
-
-        let objFinalFrame = NSRect(x: fltOriginX.rounded(), y: objAnchorPoint.y + 8, width: objSize.width, height: objSize.height)
 
         if blnIsVisible {
             // Already open: glide to the new icon/size instead of re-animating in.
@@ -143,7 +148,7 @@ final class WindowPickerController {
 
         // Fade in while rising a few points: short and snappy.
         blnIsVisible = true
-        objPanel.setFrame(objFinalFrame.offsetBy(dx: 0, dy: -6), display: false)
+        objPanel.setFrame(objFinalFrame.offsetBy(dx: objEntryOffset.dx, dy: objEntryOffset.dy), display: false)
         objPanel.alphaValue = 0
         objPanel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { objContext in
@@ -152,6 +157,28 @@ final class WindowPickerController {
             objPanel.animator().setFrame(objFinalFrame, display: true)
             objPanel.animator().alphaValue = 1
         }
+    }
+
+    /// Picker frame next to the icon: above it for a bottom dock, beside it for a
+    /// side dock, clamped so it stays fully on screen.
+    /// - Parameters:
+    ///   - objSize: Picker size.
+    ///   - objAnchorPoint: Screen point on the icon's outer edge.
+    /// - Returns: Frame in screen coordinates.
+    private func frame(forSize objSize: CGSize, objAnchorPoint: CGPoint) -> NSRect {
+        let fltGap: CGFloat = 8
+        var objOrigin: CGPoint = switch enmPosition {
+        case .bottom: CGPoint(x: objAnchorPoint.x - objSize.width / 2, y: objAnchorPoint.y + fltGap)
+        case .left: CGPoint(x: objAnchorPoint.x + fltGap, y: objAnchorPoint.y - objSize.height / 2)
+        case .right: CGPoint(x: objAnchorPoint.x - fltGap - objSize.width, y: objAnchorPoint.y - objSize.height / 2)
+        }
+
+        if let objScreen = NSScreen.screens.first(where: { $0.frame.contains(objAnchorPoint) }) ?? NSScreen.main {
+            let objBounds = objScreen.visibleFrame.insetBy(dx: 8, dy: 8)
+            objOrigin.x = min(max(objOrigin.x, objBounds.minX), objBounds.maxX - objSize.width)
+            objOrigin.y = min(max(objOrigin.y, objBounds.minY), objBounds.maxY - objSize.height)
+        }
+        return NSRect(x: objOrigin.x.rounded(), y: objOrigin.y.rounded(), width: objSize.width, height: objSize.height)
     }
 
     /// Captures fresh thumbnails in the background and fades each in as it arrives.

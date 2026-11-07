@@ -24,21 +24,69 @@ final class AppTracker {
     /// Bundle ID of the frontmost app, for the active indicator.
     private(set) var strActiveBundleId: String?
 
-    /// Called after `arrObjItems` changes so the panel can resize.
+    /// Called after the set or order of items changes so the panel can resize.
     @ObservationIgnored var onItemsChanged: (() -> Void)?
 
-    // Phase 0 default pins; Phase 2 makes these user-editable and persisted.
-    @ObservationIgnored private let arrStrPinnedBundleIds = [
-        "com.apple.finder",
-        "com.google.Chrome",
-        "com.todesktop.230313mzl4w4u92", // Cursor
-        "com.anthropic.claudefordesktop",
-        "com.apple.Terminal",
-        "com.apple.systempreferences",
-    ]
-
+    @ObservationIgnored private let objSettings: SettingsStore
     @ObservationIgnored private var arrObjObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var dictObjIconCache: [String: NSImage] = [:]
+
+    /// Creates a tracker that reads pinned apps from settings.
+    /// - Parameter objSettings: User preferences (owns the pinned list).
+    init(objSettings: SettingsStore) {
+        self.objSettings = objSettings
+    }
+
+    // MARK: - Pinning
+
+    /// Pins an app.
+    /// - Parameters:
+    ///   - strBundleId: App to pin.
+    ///   - intIndex: Position among visible pinned items, or `nil` to append.
+    func pin(_ strBundleId: String, at intIndex: Int? = nil) {
+        var arrStrVisible = visiblePinnedIds().filter { $0 != strBundleId }
+        let intTarget = min(max(intIndex ?? arrStrVisible.count, 0), arrStrVisible.count)
+        arrStrVisible.insert(strBundleId, at: intTarget)
+        savePinned(arrStrVisible)
+    }
+
+    /// Unpins an app (it stays in the dock while running).
+    /// - Parameter strBundleId: App to unpin.
+    func unpin(_ strBundleId: String) {
+        savePinned(visiblePinnedIds().filter { $0 != strBundleId })
+    }
+
+    /// Applies a drag-reorder: pinned items move within the pinned group; a running
+    /// item dropped among pinned ones becomes pinned there.
+    /// - Parameters:
+    ///   - strBundleId: Dragged item.
+    ///   - intSlot: Slot it was dropped in (index into the full item list).
+    func move(_ strBundleId: String, toSlot intSlot: Int) {
+        let arrStrVisible = visiblePinnedIds()
+        if arrStrVisible.contains(strBundleId) {
+            pin(strBundleId, at: min(intSlot, arrStrVisible.count - 1))
+        } else if intSlot <= arrStrVisible.count {
+            pin(strBundleId, at: intSlot)
+        }
+    }
+
+    /// Pinned IDs currently shown (installed apps), in dock order.
+    /// - Returns: Bundle IDs.
+    private func visiblePinnedIds() -> [String] {
+        arrObjItems.filter(\.blnIsPinned).map(\.strBundleId)
+    }
+
+    /// Saves a new visible pinned order, keeping pins for apps that aren't installed
+    /// right now (e.g. on an unmounted drive) so they come back later.
+    /// - Parameter arrStrVisible: New order of visible pinned items.
+    private func savePinned(_ arrStrVisible: [String]) {
+        let setStrVisibleBefore = Set(visiblePinnedIds())
+        let arrStrHidden = objSettings.arrStrPinnedBundleIds.filter {
+            !setStrVisibleBefore.contains($0) && !arrStrVisible.contains($0)
+        }
+        objSettings.arrStrPinnedBundleIds = arrStrVisible + arrStrHidden
+        rebuild()
+    }
 
     /// Subscribes to app launch/quit/activation events and builds the initial list.
     func start() {
@@ -78,26 +126,27 @@ final class AppTracker {
         }
 
         var arrObjNewItems: [DockItem] = []
+        let arrStrPinned = objSettings.arrStrPinnedBundleIds
 
         // Pinned apps keep their slot whether or not they're running.
-        for strId in arrStrPinnedBundleIds {
+        for strId in arrStrPinned {
             guard let objUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: strId) else { continue }
             arrObjNewItems.append(makeItem(strBundleId: strId, objAppUrl: objUrl, objRunningApp: dictObjRunningById[strId], blnIsPinned: true))
         }
 
         // Then every running app that isn't pinned, in launch order.
-        let setStrPinned = Set(arrStrPinnedBundleIds)
+        let setStrPinned = Set(arrStrPinned)
         for objApp in arrObjRunning {
             guard let strId = objApp.bundleIdentifier, !setStrPinned.contains(strId),
                   !arrObjNewItems.contains(where: { $0.strBundleId == strId }) else { continue }
             arrObjNewItems.append(makeItem(strBundleId: strId, objAppUrl: objApp.bundleURL, objRunningApp: objApp, blnIsPinned: false))
         }
 
-        let blnCountChanged = arrObjNewItems.count != arrObjItems.count
+        let blnItemsChanged = arrObjNewItems.map(\.id) != arrObjItems.map(\.id)
         arrObjItems = arrObjNewItems
         strActiveBundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
 
-        if blnCountChanged {
+        if blnItemsChanged {
             onItemsChanged?()
         }
     }

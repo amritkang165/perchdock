@@ -29,6 +29,15 @@ final class DockPanel: NSPanel {
         isReleasedWhenClosed = false
     }
 
+    /// Allow frames beyond the screen edge, where the auto-hidden dock tucks away.
+    /// - Parameters:
+    ///   - frameRect: Requested frame.
+    ///   - screen: Target screen.
+    /// - Returns: The requested frame, unchanged.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
+
     /// Never become key, so keystrokes keep going to the user's app.
     override var canBecomeKey: Bool { false }
 
