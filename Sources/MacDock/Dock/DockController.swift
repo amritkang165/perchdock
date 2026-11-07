@@ -28,7 +28,12 @@ final class DockController {
     private let objHostingView: TrackingHostingView<DockView>
     private let objPicker: WindowPickerController
     private let objDragIcon = DragIconController()
+    private let objHoverLabel = HoverLabelController()
     private let objMouseMonitor = MouseMonitor()
+
+    // Display the dock is on (`nil` = main display).
+    private var intScreenId: CGDirectDisplayID?
+    private var objMoveScreenTask: Task<Void, Never>?
 
     private var objShowPickerTask: Task<Void, Never>?
     private var objHidePickerTask: Task<Void, Never>?
@@ -136,10 +141,14 @@ final class DockController {
             _ = objSettings.fltEffectiveMagnification
             _ = objSettings.enmPosition
             _ = objSettings.blnAutoHide
+            _ = objSettings.enmDisplayMode
         } onChange: { [weak self] in
             // onChange fires before the new value is stored; apply on the next turn.
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                if self.objSettings.enmDisplayMode == .main {
+                    self.intScreenId = nil
+                }
                 self.blnShown = !self.objSettings.blnAutoHide || self.blnMouseOverDock
                 self.layoutPanel(blnAnimated: true)
                 self.observeSettings()
@@ -151,12 +160,23 @@ final class DockController {
 
     /// Geometry for the current settings and items.
     private var objGeometry: DockGeometry {
-        DockGeometry(objSettings: objSettings, intCount: objTracker.arrObjItems.count)
+        DockGeometry(objSettings: objSettings, arrObjItems: objTracker.arrObjItems)
     }
 
-    /// Screen the dock lives on (the one with the menu bar).
+    /// Screen the dock lives on: the chosen display if it's still connected,
+    /// otherwise the one with the menu bar.
     private var objScreen: NSScreen? {
-        NSScreen.screens.first
+        if let intScreenId, let objMatch = NSScreen.screens.first(where: { Self.displayId(of: $0) == intScreenId }) {
+            return objMatch
+        }
+        return NSScreen.screens.first
+    }
+
+    /// Core Graphics display ID of a screen.
+    /// - Parameter objScreen: Screen.
+    /// - Returns: Display ID, or `nil` if unavailable.
+    private static func displayId(of objScreen: NSScreen) -> CGDirectDisplayID? {
+        (objScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
 
     /// Converts a screen point into panel coordinates (bottom-left origin).
@@ -236,23 +256,79 @@ final class DockController {
 
         objState.fltMouseMain = blnOverDock && objGeometry.fltMagnification > 1.001 ? fltMain : nil
         updateHoveredIndex(blnOverDock ? objGeometry.slotIndex(atMain: fltMain) : nil)
+        updateHoverLabel()
 
         // Hidden dock: watch for the cursor reaching the screen edge.
         if objSettings.blnAutoHide && !blnShown {
             handleEdgeProximity(objScreenPoint)
         }
+        // Follow mode: watch for the cursor pushing the dock edge of another display.
+        if objSettings.enmDisplayMode == .followCursor {
+            handleDisplayFollow(objScreenPoint)
+        }
     }
 
-    /// Whether a screen point is touching the dock's screen edge.
-    /// - Parameter objScreenPoint: Cursor location.
-    /// - Returns: `true` within 1pt of the edge.
-    private func isAtDockEdge(_ objScreenPoint: CGPoint) -> Bool {
-        guard let objFrame = objScreen?.frame, objFrame.insetBy(dx: -1, dy: -1).contains(objScreenPoint) else { return false }
+    /// Shows the hovered app's name, or hides the label when previews, a drag or
+    /// nothing is hovered.
+    private func updateHoverLabel() {
+        guard objSettings.blnShowLabels, blnShown, !objPicker.blnIsVisible, objState.objDrag == nil,
+              let intIndex = objState.intHoveredIndex,
+              let objItem = objTracker.arrObjItems[safe: intIndex] else {
+            objHoverLabel.hide()
+            return
+        }
+        objHoverLabel.show(strText: objItem.strName, objAnchorPoint: anchorPoint(forIndex: intIndex), enmPosition: objSettings.enmPosition)
+    }
+
+    /// Whether a screen point is touching the dock edge of a screen.
+    /// - Parameters:
+    ///   - objScreenPoint: Cursor location.
+    ///   - objTargetScreen: Screen to test (defaults to the dock's screen).
+    /// - Returns: `true` within 1pt of that screen's dock edge.
+    private func isAtDockEdge(_ objScreenPoint: CGPoint, of objTargetScreen: NSScreen? = nil) -> Bool {
+        guard let objFrame = (objTargetScreen ?? objScreen)?.frame,
+              objFrame.insetBy(dx: -1, dy: -1).contains(objScreenPoint) else { return false }
         switch objSettings.enmPosition {
         case .bottom: return objScreenPoint.y <= objFrame.minY + 1
         case .left: return objScreenPoint.x <= objFrame.minX + 1
         case .right: return objScreenPoint.x >= objFrame.maxX - 1
         }
+    }
+
+    /// Moves the dock to another display when the cursor rests on that display's
+    /// dock edge, like the native Dock.
+    /// - Parameter objScreenPoint: Cursor location.
+    private func handleDisplayFollow(_ objScreenPoint: CGPoint) {
+        guard let objTarget = NSScreen.screens.first(where: { $0.frame.insetBy(dx: -1, dy: -1).contains(objScreenPoint) }),
+              objTarget != objScreen, isAtDockEdge(objScreenPoint, of: objTarget) else {
+            objMoveScreenTask?.cancel()
+            objMoveScreenTask = nil
+            return
+        }
+        guard objMoveScreenTask == nil else { return }
+
+        objMoveScreenTask = Task { [weak self] in
+            guard let self else { return }
+            // A short dwell, so merely crossing the edge doesn't yank the dock over.
+            try? await Task.sleep(for: .seconds(max(self.objSettings.fltShowDelay, 0.2)))
+            guard !Task.isCancelled else { return }
+            self.objMoveScreenTask = nil
+            guard self.isAtDockEdge(NSEvent.mouseLocation, of: objTarget) else { return }
+            self.moveDock(to: objTarget)
+        }
+    }
+
+    /// Re-docks on another display, sliding in from its edge.
+    /// - Parameter objTarget: Destination screen.
+    private func moveDock(to objTarget: NSScreen) {
+        hidePicker()
+        objHoverLabel.hide()
+        intScreenId = Self.displayId(of: objTarget)
+
+        // Start tucked beyond the new edge, then slide in.
+        objPanel.setFrame(objGeometry.panelFrame(in: objTarget.frame, blnShown: false), display: false)
+        blnShown = false
+        setShown(true)
     }
 
     /// Schedules the dock to appear while the cursor rests at the edge.
@@ -311,6 +387,7 @@ final class DockController {
         blnShown = blnVisible
         if !blnVisible {
             hidePicker()
+            objHoverLabel.hide()
             objState.fltMouseMain = nil
             updateHoveredIndex(nil)
             objPanel.ignoresMouseEvents = true
@@ -379,6 +456,7 @@ final class DockController {
             hidePicker()
             objState.fltMouseMain = nil
             objState.objDrag = DockDrag(intIndex: intPressIndex, intTargetSlot: intPressIndex, blnOutside: false)
+            objHoverLabel.hide()
             objDragIcon.begin(
                 objIcon: objTracker.arrObjItems[intPressIndex].objIcon,
                 fltSize: objGeometry.fltIconSize,
@@ -536,6 +614,7 @@ final class DockController {
 
         let objMenu = buildMenu(for: objItem)
         blnMenuOpen = true
+        objHoverLabel.hide()
         updateAutoHide()
         // Blocks until the menu closes.
         NSMenu.popUpContextMenu(objMenu, with: objEvent, for: objHostingView)
@@ -629,6 +708,8 @@ final class DockController {
             hidePicker()
             return
         }
+        // The picker shows the name itself.
+        objHoverLabel.hide()
 
         // Without Accessibility we can't list windows; say so instead of showing nothing.
         guard AccessibilityPermission.blnIsTrusted else {
@@ -737,6 +818,13 @@ final class DockController {
     /// - Parameter intIndex: Icon to center the magnification on.
     func debugMagnify(atIndex intIndex: Int) {
         objState.fltMouseMain = objGeometry.baseCenter(intIndex)
+        // Show the name label too, but skip the picker's hover schedule.
+        objState.intHoveredIndex = intIndex
+        Task { @MainActor [weak self] in
+            // Wait for the magnified layout so the label anchors to the grown icon.
+            try? await Task.sleep(for: .milliseconds(300))
+            self?.updateHoverLabel()
+        }
     }
 
     /// Debug aid: rapidly switches the picker across every running app, the

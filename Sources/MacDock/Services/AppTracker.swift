@@ -142,7 +142,9 @@ final class AppTracker {
             arrObjNewItems.append(makeItem(strBundleId: strId, objAppUrl: objApp.bundleURL, objRunningApp: objApp, blnIsPinned: false))
         }
 
+        // Pinned flags matter too: they move the separator and change the bar length.
         let blnItemsChanged = arrObjNewItems.map(\.id) != arrObjItems.map(\.id)
+            || arrObjNewItems.map(\.blnIsPinned) != arrObjItems.map(\.blnIsPinned)
         arrObjItems = arrObjNewItems
         strActiveBundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
 

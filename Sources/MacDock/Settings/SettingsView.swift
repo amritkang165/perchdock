@@ -48,6 +48,20 @@ private struct AppearanceTab: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                Picker("Show dock on", selection: $objSettings.enmDisplayMode) {
+                    ForEach(DockDisplayMode.allCases) { enmMode in
+                        Text(enmMode.strTitle).tag(enmMode)
+                    }
+                }
+            } footer: {
+                if objSettings.enmDisplayMode == .followCursor {
+                    Text("Push the cursor against the dock's edge on another display to move the dock there.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
+                Toggle("Show app names on hover", isOn: $objSettings.blnShowLabels)
             }
         }
         .formStyle(.grouped)

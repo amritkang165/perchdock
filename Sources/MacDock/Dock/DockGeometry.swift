@@ -15,6 +15,9 @@ struct DockGeometry {
     let fltIconSize: CGFloat
     let fltMagnification: CGFloat
     let intCount: Int
+    /// Index of the last pinned item when a separator follows it (pinned and
+    /// unpinned items both present); `nil` for no separator.
+    let intSeparatorAfter: Int?
 
     static let fltIndicatorSize: CGFloat = 5
     static let fltScreenGap: CGFloat = 4
@@ -29,16 +32,19 @@ struct DockGeometry {
         var fltBarEnd: CGFloat
     }
 
-    /// Builds geometry from settings.
+    /// Builds geometry from settings and the current items.
     /// - Parameters:
     ///   - objSettings: User preferences.
-    ///   - intCount: Number of dock items.
+    ///   - arrObjItems: Dock items in display order (pinned first).
     @MainActor
-    init(objSettings: SettingsStore, intCount: Int) {
+    init(objSettings: SettingsStore, arrObjItems: [DockItem]) {
         enmPosition = objSettings.enmPosition
         fltIconSize = CGFloat(objSettings.fltIconSize)
         fltMagnification = CGFloat(objSettings.fltEffectiveMagnification)
-        self.intCount = intCount
+        intCount = arrObjItems.count
+
+        let intPinnedCount = arrObjItems.filter(\.blnIsPinned).count
+        intSeparatorAfter = intPinnedCount > 0 && intPinnedCount < arrObjItems.count ? intPinnedCount - 1 : nil
     }
 
     // MARK: - Dimensions
@@ -51,10 +57,13 @@ struct DockGeometry {
     /// Bar thickness: padding, running indicator, icon, padding.
     var fltBarThickness: CGFloat { fltPadding * 2 + Self.fltIndicatorSize + fltIconSize }
 
+    /// Extra room the separator adds between the pinned and running groups.
+    var fltSeparatorGap: CGFloat { intSeparatorAfter == nil ? 0 : fltSpacing + 4 }
+
     /// Bar length with no magnification.
     var fltBaseLength: CGFloat {
         let intSafeCount = max(intCount, 1)
-        return CGFloat(intSafeCount) * fltIconSize + CGFloat(intSafeCount - 1) * fltSpacing + fltPadding * 2
+        return CGFloat(intSafeCount) * fltIconSize + CGFloat(intSafeCount - 1) * fltSpacing + fltPadding * 2 + fltSeparatorGap
     }
 
     /// Largest total growth magnification can add (cosine falloff sums to ~3 icons).
@@ -94,7 +103,24 @@ struct DockGeometry {
     /// - Parameter intIndex: Item index.
     /// - Returns: Main coordinate.
     func baseCenter(_ intIndex: Int) -> CGFloat {
-        fltBarStart + fltPadding + CGFloat(intIndex) * fltSlot + fltIconSize / 2
+        let fltGap = intSeparatorAfter.map { intIndex > $0 ? fltSeparatorGap : 0 } ?? 0
+        return fltBarStart + fltPadding + CGFloat(intIndex) * fltSlot + fltIconSize / 2 + fltGap
+    }
+
+    /// Main coordinate of the separator line with no magnification.
+    var fltBaseSeparatorMain: CGFloat? {
+        intSeparatorAfter.map { (baseCenter($0) + baseCenter($0 + 1)) / 2 }
+    }
+
+    /// Removes the separator gap from a main coordinate, so slot math can treat
+    /// the bar as evenly spaced.
+    /// - Parameter fltMain: Main coordinate.
+    /// - Returns: Coordinate with the gap collapsed.
+    private func collapsingSeparator(_ fltMain: CGFloat) -> CGFloat {
+        guard let fltSeparator = fltBaseSeparatorMain else { return fltMain }
+        if fltMain <= fltSeparator - fltSeparatorGap / 2 { return fltMain }
+        if fltMain >= fltSeparator + fltSeparatorGap / 2 { return fltMain - fltSeparatorGap }
+        return fltSeparator - fltSeparatorGap / 2
     }
 
     /// Item under a main coordinate. Gaps are split between neighbors so sweeping
@@ -103,7 +129,7 @@ struct DockGeometry {
     /// - Parameter fltMain: Main coordinate.
     /// - Returns: Item index or `nil`.
     func slotIndex(atMain fltMain: CGFloat) -> Int? {
-        let fltRelative = fltMain - fltBarStart - fltPadding + fltSpacing / 2
+        let fltRelative = collapsingSeparator(fltMain) - fltBarStart - fltPadding + fltSpacing / 2
         guard fltRelative >= 0 else { return nil }
         let intIndex = Int(fltRelative / fltSlot)
         return intIndex < intCount ? intIndex : nil
@@ -113,8 +139,20 @@ struct DockGeometry {
     /// - Parameter fltMain: Main coordinate.
     /// - Returns: Slot index clamped to the item range.
     func dropSlot(atMain fltMain: CGFloat) -> Int {
-        let fltRelative = fltMain - fltBarStart - fltPadding + fltSpacing / 2
+        let fltRelative = collapsingSeparator(fltMain) - fltBarStart - fltPadding + fltSpacing / 2
         return min(max(Int((fltRelative / fltSlot).rounded(.down)), 0), max(intCount - 1, 0))
+    }
+
+    /// Separator position in a (possibly magnified) layout: midway between the
+    /// last pinned icon's far edge and the first running icon's near edge.
+    /// - Parameter objLayout: Current layout.
+    /// - Returns: Main coordinate, or `nil` without a separator.
+    func separatorMain(in objLayout: Layout) -> CGFloat? {
+        guard let intAfter = intSeparatorAfter,
+              intAfter + 1 < objLayout.arrFltCenters.count else { return nil }
+        let fltLeadingEdge = objLayout.arrFltCenters[intAfter] + objLayout.arrFltSizes[intAfter] / 2
+        let fltTrailingEdge = objLayout.arrFltCenters[intAfter + 1] - objLayout.arrFltSizes[intAfter + 1] / 2
+        return (fltLeadingEdge + fltTrailingEdge) / 2
     }
 
     // MARK: - Layouts

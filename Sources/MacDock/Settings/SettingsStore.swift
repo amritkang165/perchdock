@@ -23,6 +23,24 @@ enum DockPosition: String, CaseIterable, Identifiable {
     var blnIsVertical: Bool { self != .bottom }
 }
 
+/// Which display the dock lives on.
+enum DockDisplayMode: String, CaseIterable, Identifiable {
+    /// Always the display with the menu bar.
+    case main
+    /// Moves to whichever display the cursor pushes against the dock edge on.
+    case followCursor
+
+    var id: String { rawValue }
+
+    /// Label for the settings picker.
+    var strTitle: String {
+        switch self {
+        case .main: "Main display"
+        case .followCursor: "Follow the cursor"
+        }
+    }
+}
+
 /// All user preferences, persisted to UserDefaults on every change.
 /// Views bind to it directly; controllers observe it to re-layout.
 @MainActor
@@ -40,6 +58,8 @@ final class SettingsStore {
         static let strPreviewDelay = "PreviewDelay"
         static let strHideNativeDock = "HideNativeDock"
         static let strPinned = "PinnedBundleIds"
+        static let strShowLabels = "ShowLabels"
+        static let strDisplayMode = "DisplayMode"
     }
 
     /// Pins used on first launch.
@@ -89,6 +109,12 @@ final class SettingsStore {
     /// Pinned apps in dock order.
     var arrStrPinnedBundleIds: [String] { didSet { objDefaults.set(arrStrPinnedBundleIds, forKey: Key.strPinned) } }
 
+    /// Whether the app's name appears above a hovered icon.
+    var blnShowLabels: Bool { didSet { objDefaults.set(blnShowLabels, forKey: Key.strShowLabels) } }
+
+    /// Which display the dock lives on.
+    var enmDisplayMode: DockDisplayMode { didSet { objDefaults.set(enmDisplayMode.rawValue, forKey: Key.strDisplayMode) } }
+
     /// Whether MacDock starts at login (mirrors the system's login item state).
     private(set) var blnLaunchAtLogin: Bool
 
@@ -113,6 +139,8 @@ final class SettingsStore {
             Key.strPreviewDelay: 0.32,
             Key.strHideNativeDock: false,
             Key.strPinned: Self.arrStrDefaultPinned,
+            Key.strShowLabels: true,
+            Key.strDisplayMode: DockDisplayMode.main.rawValue,
         ])
 
         fltIconSize = objDefaults.double(forKey: Key.strIconSize)
@@ -125,6 +153,8 @@ final class SettingsStore {
         fltPreviewDelay = objDefaults.double(forKey: Key.strPreviewDelay)
         blnHideNativeDock = objDefaults.bool(forKey: Key.strHideNativeDock)
         arrStrPinnedBundleIds = objDefaults.stringArray(forKey: Key.strPinned) ?? Self.arrStrDefaultPinned
+        blnShowLabels = objDefaults.bool(forKey: Key.strShowLabels)
+        enmDisplayMode = DockDisplayMode(rawValue: objDefaults.string(forKey: Key.strDisplayMode) ?? "") ?? .main
         blnLaunchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

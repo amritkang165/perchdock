@@ -22,12 +22,20 @@ struct DockView: View {
 
     var body: some View {
         let arrObjItems = objTracker.arrObjItems
-        let objGeometry = DockGeometry(objSettings: objSettings, intCount: arrObjItems.count)
+        let objGeometry = DockGeometry(objSettings: objSettings, arrObjItems: arrObjItems)
         let objLayout = objState.objDrag.map { objGeometry.layout(dragging: $0) }
             ?? objGeometry.layout(mouseMain: objState.fltMouseMain)
+        // While dragging, slots no longer map to item indices; keep the separator fixed.
+        let fltSeparatorMain = objState.objDrag == nil
+            ? objGeometry.separatorMain(in: objLayout)
+            : objGeometry.fltBaseSeparatorMain
 
         ZStack(alignment: .topLeading) {
             barBackground(objGeometry: objGeometry, objLayout: objLayout)
+
+            if let fltSeparatorMain {
+                separator(objGeometry: objGeometry, fltMain: fltSeparatorMain)
+            }
 
             ForEach(Array(arrObjItems.enumerated()), id: \.element.id) { intIndex, objItem in
                 let fltCenter = objLayout.arrFltCenters[safe: intIndex] ?? objGeometry.baseCenter(intIndex)
@@ -56,6 +64,23 @@ struct DockView: View {
         .animation(.spring(response: 0.24, dampingFraction: 0.82), value: objState.objDrag)
         .animation(.spring(response: 0.28, dampingFraction: 0.82), value: arrObjItems.map(\.id))
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.fltIconSize)
+    }
+
+    /// Thin divider between pinned apps and other running apps.
+    /// - Parameters:
+    ///   - objGeometry: Current geometry.
+    ///   - fltMain: Separator position along the bar.
+    /// - Returns: The positioned line.
+    private func separator(objGeometry: DockGeometry, fltMain: CGFloat) -> some View {
+        let fltLength = objGeometry.fltIconSize * 0.7
+        let objSize = objGeometry.enmPosition.blnIsVertical
+            ? CGSize(width: fltLength, height: 1)
+            : CGSize(width: 1, height: fltLength)
+
+        return Capsule()
+            .fill(Color.primary.opacity(0.25))
+            .frame(width: objSize.width, height: objSize.height)
+            .position(objGeometry.viewPoint(main: fltMain, cross: objGeometry.iconCross(forSize: objGeometry.fltIconSize)))
     }
 
     /// Glass bar spanning the (possibly magnified) icons.
