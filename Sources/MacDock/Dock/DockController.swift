@@ -1366,6 +1366,15 @@ final class DockController {
             self?.chooseFolder(at: intInsert)
         })
         objMenu.addItem(.separator())
+
+        // Quick settings (position, auto-hide, …) without opening the Settings window.
+        let objQuickItem = NSMenuItem(title: "Dock Options", action: nil, keyEquivalent: "")
+        let objQuickMenu = NSMenu(title: "Dock Options")
+        objQuickMenu.autoenablesItems = false
+        QuickSettingsMenu.add(to: objQuickMenu, objSettings: objSettings)
+        objQuickItem.submenu = objQuickMenu
+        objMenu.addItem(objQuickItem)
+
         objMenu.addItem(ClosureMenuItem("Dock Settings…") { [weak self] in
             self?.onOpenSettings?()
         })

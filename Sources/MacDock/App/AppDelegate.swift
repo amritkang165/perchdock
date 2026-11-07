@@ -3,7 +3,7 @@ import os
 
 /// Owns the app's long-lived services and the menu bar status item.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let objSettings = SettingsStore()
     private lazy var objAppTracker = AppTracker(objSettings: objSettings)
     private let objWindowService = WindowService()
@@ -17,7 +17,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var objSettingsWindow = SettingsWindowController(objSettings: objSettings, objThumbnailService: objThumbnailService)
     private var objDockController: DockController?
     private var objStatusItem: NSStatusItem?
-    private var objHideDockMenuItem: NSMenuItem?
 
     /// Boots services, reconciles native Dock state, and shows the dock panel.
     /// - Parameter notification: Launch notification (unused).
@@ -105,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Hides or restores the native Dock and syncs the menu checkmark.
+    /// Hides or restores the native Dock.
     /// - Parameter blnHide: Whether the native Dock should be hidden.
     private func applyNativeDock(_ blnHide: Bool) {
         if blnHide {
@@ -113,27 +112,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if objNativeDock.blnIsHiddenByUs {
             objNativeDock.restore()
         }
-        objHideDockMenuItem?.state = blnHide ? .on : .off
     }
 
     // MARK: - Status item
 
-    /// Creates the menu bar item that hosts MacDock's controls.
+    /// Creates the menu bar item that hosts MacDock's controls. The menu is filled
+    /// in `menuNeedsUpdate(_:)` each time it opens, so checkmarks match the settings.
     private func buildStatusItem() {
         let objItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         objItem.button?.image = NSImage(systemSymbolName: "dock.rectangle", accessibilityDescription: "MacDock")
 
         let objMenu = NSMenu()
+        objMenu.delegate = self
+        objItem.menu = objMenu
+        objStatusItem = objItem
+    }
+
+    /// Rebuilds the status menu: quick settings, then Settings, updates and Quit.
+    /// - Parameter objMenu: The status item's menu, about to open.
+    func menuNeedsUpdate(_ objMenu: NSMenu) {
+        objMenu.removeAllItems()
+
+        QuickSettingsMenu.add(to: objMenu, objSettings: objSettings)
+        objMenu.addItem(.separator())
 
         let objSettingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         objSettingsItem.target = self
         objMenu.addItem(objSettingsItem)
-
-        let objHideItem = NSMenuItem(title: "Hide Native Dock", action: #selector(toggleNativeDock), keyEquivalent: "")
-        objHideItem.target = self
-        objHideItem.state = objSettings.blnHideNativeDock ? .on : .off
-        objMenu.addItem(objHideItem)
-        objHideDockMenuItem = objHideItem
 
         // Only builds published with an update feed can update themselves.
         if objUpdates.blnIsConfigured {
@@ -147,9 +152,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let objQuitItem = NSMenuItem(title: "Quit MacDock", action: #selector(quit), keyEquivalent: "q")
         objQuitItem.target = self
         objMenu.addItem(objQuitItem)
-
-        objItem.menu = objMenu
-        objStatusItem = objItem
     }
 
     /// Opens the Settings window.
@@ -160,11 +162,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Checks for a new version via Sparkle.
     @objc private func checkForUpdates() {
         objUpdates.checkForUpdates()
-    }
-
-    /// Flips the "hide native Dock" preference (the settings store applies it).
-    @objc private func toggleNativeDock() {
-        objSettings.blnHideNativeDock.toggle()
     }
 
     /// Quits MacDock (the termination hook restores the native Dock).
