@@ -20,6 +20,12 @@ final class TrackingHostingView<Content: View>: NSHostingView<Content> {
     /// Right-click (or control-click), with the event for positioning a context menu.
     var onRightMouseDown: ((CGPoint, NSEvent) -> Void)?
 
+    /// Middle-click (any non-left/right button) released, with the event for positioning a menu.
+    var onMiddleMouseUp: ((CGPoint, NSEvent) -> Void)?
+
+    /// Scroll wheel / trackpad scroll, with the raw event for deltas and phases.
+    var onScrollWheel: ((CGPoint, NSEvent) -> Void)?
+
     /// File drag hovering over the view: return the operation to show (or `[]`).
     var onFileDragUpdated: (([URL], CGPoint) -> NSDragOperation)?
     /// File drag ended without a drop.
@@ -115,6 +121,18 @@ final class TrackingHostingView<Content: View>: NSHostingView<Content> {
     /// - Parameter event: Mouse event.
     override func rightMouseDown(with event: NSEvent) {
         onRightMouseDown?(localPoint(event), event)
+    }
+
+    /// Reports a middle-click release.
+    /// - Parameter event: Mouse event.
+    override func otherMouseUp(with event: NSEvent) {
+        onMiddleMouseUp?(localPoint(event), event)
+    }
+
+    /// Reports scrolling over the view.
+    /// - Parameter event: Scroll event.
+    override func scrollWheel(with event: NSEvent) {
+        onScrollWheel?(localPoint(event), event)
     }
 
     // MARK: - File drops

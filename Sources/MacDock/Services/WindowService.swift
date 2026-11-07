@@ -117,9 +117,152 @@ final class WindowService {
     /// (so apps still get to ask "save changes?").
     /// - Parameter objWindow: Window to close; ignored if it has no AX handle.
     func close(_ objWindow: WindowInfo) {
-        guard let objElement = objWindow.objElement,
+        guard let objElement = axElement(for: objWindow),
               let objCloseButton: AXUIElement = attribute(objElement, kAXCloseButtonAttribute) else { return }
         AXUIElementPerformAction(objCloseButton, kAXPressAction as CFString)
+    }
+
+    // MARK: - Tabs
+
+    /// One tab in a window's tab bar.
+    struct TabInfo {
+        let strTitle: String
+        let blnIsSelected: Bool
+        let objElement: AXUIElement
+    }
+
+    /// How deep to search a window's AX tree for its tab bar.
+    private static let intMaxTabSearchDepth = 9
+
+    /// Tabs of a window (Chrome, Safari, Terminal, Finder…), front tab marked.
+    /// - Parameter objWindow: Window with an AX handle.
+    /// - Returns: Tabs in bar order; empty when the window has no tab bar.
+    func tabs(in objWindow: WindowInfo) -> [TabInfo] {
+        guard let objElement = axElement(for: objWindow),
+              let objTabGroup = findDescendant(of: objElement, intDepth: Self.intMaxTabSearchDepth, where: { objCandidate in
+                  let strRole: String? = self.attribute(objCandidate, kAXRoleAttribute)
+                  return strRole == kAXTabGroupRole
+              }) else { return [] }
+
+        // Chrome nests its tabs (subrole AXTabButton) deep inside scroll areas;
+        // Safari, Terminal and Finder put radio buttons directly in the group.
+        var arrObjTabButtons: [AXUIElement] = []
+        collectDescendants(of: objTabGroup, intDepth: 8, into: &arrObjTabButtons) { objCandidate in
+            let strRole: String? = self.attribute(objCandidate, kAXRoleAttribute)
+            return strRole == kAXRadioButtonRole
+        }
+
+        let arrObjTabs = arrObjTabButtons.map { objButton in
+            var strTitle: String = attribute(objButton, kAXTitleAttribute) ?? attribute(objButton, kAXDescriptionAttribute) ?? ""
+            // Chrome appends hover-card details ("- Memory usage - 40 MB", "- Part of group …").
+            for strSuffix in [" - Memory usage", " - Part of group"] {
+                if let objRange = strTitle.range(of: strSuffix) {
+                    strTitle = String(strTitle[..<objRange.lowerBound])
+                }
+            }
+            let intValue: Int = attribute(objButton, kAXValueAttribute) ?? 0
+            return TabInfo(strTitle: strTitle, blnIsSelected: intValue == 1, objElement: objButton)
+        }
+
+        // Segmented controls (e.g. Calendar's Day/Week/Month) are tab groups too;
+        // real tabs carry their own close button (pinned tabs don't, so check them all).
+        guard arrObjTabs.contains(where: { closeButton(inTab: $0.objElement) != nil }) else { return [] }
+        return arrObjTabs
+    }
+
+    /// A tab's own close button.
+    /// - Parameter objTab: Tab element.
+    /// - Returns: The button, or `nil` if the tab has none.
+    private func closeButton(inTab objTab: AXUIElement) -> AXUIElement? {
+        findDescendant(of: objTab, intDepth: 3) { objCandidate in
+            let strRole: String? = self.attribute(objCandidate, kAXRoleAttribute)
+            let strSubrole: String? = self.attribute(objCandidate, kAXSubroleAttribute)
+            let strDescription: String = self.attribute(objCandidate, kAXDescriptionAttribute) ?? self.attribute(objCandidate, kAXTitleAttribute) ?? ""
+            return strRole == kAXButtonRole && (strSubrole == kAXCloseButtonSubrole || strDescription.localizedCaseInsensitiveContains("close"))
+        }
+    }
+
+    /// Collects every matching element in an AX subtree (not descending into matches).
+    /// - Parameters:
+    ///   - objRoot: Where to start.
+    ///   - intDepth: Levels below the root to search.
+    ///   - arrObjResult: Receives matches in tree order.
+    ///   - fnMatch: Predicate.
+    private func collectDescendants(of objRoot: AXUIElement, intDepth: Int, into arrObjResult: inout [AXUIElement], where fnMatch: (AXUIElement) -> Bool) {
+        guard intDepth > 0 else { return }
+        let arrObjChildren: [AXUIElement] = attribute(objRoot, kAXChildrenAttribute) ?? []
+        for objChild in arrObjChildren {
+            if fnMatch(objChild) {
+                arrObjResult.append(objChild)
+            } else {
+                collectDescendants(of: objChild, intDepth: intDepth - 1, into: &arrObjResult, where: fnMatch)
+            }
+        }
+    }
+
+    /// Closes a window's front tab: presses that tab's own close button when it
+    /// exposes one, otherwise brings the window forward and sends ⌘W.
+    /// - Parameters:
+    ///   - objWindow: Window whose front tab to close.
+    ///   - objApp: Owning app.
+    func closeFrontTab(of objWindow: WindowInfo, in objApp: NSRunningApplication) {
+        if let objTab = tabs(in: objWindow).first(where: \.blnIsSelected),
+           let objCloseButton = closeButton(inTab: objTab.objElement) {
+            AXUIElementPerformAction(objCloseButton, kAXPressAction as CFString)
+            return
+        }
+
+        // Fallback: ⌘W goes to the key window, so make this one key first.
+        raise(objWindow, of: objApp)
+        Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            let objSource = CGEventSource(stateID: .hidSystemState)
+            let intKeyW: CGKeyCode = 13
+            for blnDown in [true, false] {
+                let objEvent = CGEvent(keyboardEventSource: objSource, virtualKey: intKeyW, keyDown: blnDown)
+                objEvent?.flags = .maskCommand
+                objEvent?.postToPid(objApp.processIdentifier)
+            }
+        }
+    }
+
+    /// A window's AX handle, recovering it for other-desktop windows.
+    /// - Parameter objWindow: Window.
+    /// - Returns: AX element, or `nil` if it can't be found.
+    private func axElement(for objWindow: WindowInfo) -> AXUIElement? {
+        if let objElement = objWindow.objElement {
+            return objElement
+        }
+        guard let intWindowId = objWindow.intWindowId, let intPid = pid(ofWindow: intWindowId) else { return nil }
+        return PrivateWindowAPI.axElement(forWindowId: intWindowId, intPid: intPid)
+    }
+
+    /// Owning process of a window, from the window server.
+    /// - Parameter intWindowId: Window ID.
+    /// - Returns: PID, or `nil` if the window is gone.
+    private func pid(ofWindow intWindowId: CGWindowID) -> pid_t? {
+        let arrDictInfo = CGWindowListCopyWindowInfo([.optionIncludingWindow], intWindowId) as? [[String: Any]]
+        return arrDictInfo?.first?[kCGWindowOwnerPID as String] as? pid_t
+    }
+
+    /// Depth-first search of an AX subtree.
+    /// - Parameters:
+    ///   - objRoot: Where to start (not itself tested).
+    ///   - intDepth: Levels below the root to search.
+    ///   - fnMatch: Predicate.
+    /// - Returns: The first matching descendant.
+    private func findDescendant(of objRoot: AXUIElement, intDepth: Int, where fnMatch: (AXUIElement) -> Bool) -> AXUIElement? {
+        guard intDepth > 0 else { return nil }
+        let arrObjChildren: [AXUIElement] = attribute(objRoot, kAXChildrenAttribute) ?? []
+        for objChild in arrObjChildren {
+            if fnMatch(objChild) {
+                return objChild
+            }
+            if let objFound = findDescendant(of: objChild, intDepth: intDepth - 1, where: fnMatch) {
+                return objFound
+            }
+        }
+        return nil
     }
 
     /// Launches an app, or "reopens" it if running (same as clicking it in the native Dock,

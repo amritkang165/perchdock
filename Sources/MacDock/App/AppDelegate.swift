@@ -141,6 +141,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 objLogger.notice("\(objItem.strName, privacy: .public): \(arrStrTitles, privacy: .public)")
 
+                // Tab bars, for middle-click "close tab".
+                for objWindow in arrObjWindows where objWindow.objElement != nil {
+                    let arrObjTabs = objWindowService.tabs(in: objWindow)
+                    guard !arrObjTabs.isEmpty else { continue }
+                    let arrStrTabs = arrObjTabs.map { ($0.blnIsSelected ? "*" : "") + $0.strTitle }
+                    objLogger.notice("  tabs in \(objWindow.strTitle, privacy: .public): \(arrStrTabs, privacy: .public)")
+                }
+
                 // Check that other-desktop windows can be resolved to AX elements (needed to switch to them).
                 for objWindow in arrObjWindows where objWindow.blnIsOnOtherSpace {
                     guard let intWindowId = objWindow.intWindowId else { continue }

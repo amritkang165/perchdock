@@ -7,10 +7,12 @@ import UniformTypeIdentifiers
 /// Click behavior:
 /// - app not running → launch it
 /// - running, no windows → reopen (most apps open a new window)
-/// - one window → raise it
-/// - several windows → show the picker so you choose the exact window
+/// - in the background → bring its most recent window forward
+/// - already in front → raise its next window (repeat clicks cycle through all)
+/// - Option-click → hide the app
 ///
-/// Hovering an icon briefly also opens the picker (Windows-taskbar style).
+/// Hovering an icon briefly opens the picker (Windows-taskbar style) to pick an
+/// exact window; scrolling over an icon flips through its windows.
 /// Dragging reorders; dragging off the dock removes; right-click opens a menu.
 @MainActor
 final class DockController {
@@ -99,6 +101,9 @@ final class DockController {
         objHostingView.onRightMouseDown = { [weak self] objPoint, objEvent in
             self?.showContextMenu(at: objPoint, objEvent: objEvent)
         }
+        objHostingView.onScrollWheel = { [weak self] objPoint, objEvent in
+            self?.handleScroll(at: objPoint, objEvent: objEvent)
+        }
         objHostingView.onFileDragUpdated = { [weak self] arrObjUrls, objPoint in
             self?.fileDragOperation(arrObjUrls, at: objPoint) ?? []
         }
@@ -118,6 +123,9 @@ final class DockController {
         }
         objPicker.onCloseWindow = { [weak self] objWindow in
             self?.handlePickerClose(objWindow)
+        }
+        objPicker.onMiddleClickWindow = { [weak self] objWindow, objEvent in
+            self?.handlePickerMiddleClick(objWindow, objEvent: objEvent)
         }
 
         objTracker.onItemsChanged = { [weak self] in
@@ -533,20 +541,116 @@ final class DockController {
             return
         }
 
-        let arrObjWindows = objWindowService.windows(for: objApp)
+        hidePicker()
 
-        switch arrObjWindows.count {
-        case 0:
-            // No windows: reopen, like the native Dock.
-            hidePicker()
-            if let objAppUrl { objWindowService.open(objAppUrl) } else { objApp.activate() }
-        case 1:
-            hidePicker()
-            objWindowService.raise(arrObjWindows[0], of: objApp)
-        default:
-            // Several windows: let the user choose the exact one.
-            showPicker(forIndex: intIndex, arrObjWindows: arrObjWindows)
+        // Option-click hides the app, like Option-clicking in the native Dock.
+        if NSEvent.modifierFlags.contains(.option) {
+            objApp.hide()
+            return
         }
+
+        let arrObjWindows = objWindowService.windows(for: objApp)
+        guard !arrObjWindows.isEmpty else {
+            // No windows: reopen, like the native Dock.
+            if let objAppUrl { objWindowService.open(objAppUrl) } else { objApp.activate() }
+            return
+        }
+
+        // Already in front: each click brings up the app's next window (Windows-style).
+        // Otherwise: bring the app forward with its most recent window.
+        if NSWorkspace.shared.frontmostApplication == objApp && !objApp.isHidden {
+            cycleWindows(of: objItem, intStep: 1, arrObjWindows: arrObjWindows)
+        } else {
+            resetCycle()
+            objWindowService.raise(arrObjWindows[0], of: objApp)
+        }
+    }
+
+    // MARK: - Window cycling
+
+    /// Snapshot of an app's window order, so repeated clicks/scrolls walk every
+    /// window even though each raise reshuffles the live order.
+    private struct WindowCycle {
+        let strBundleId: String
+        let arrObjWindows: [WindowInfo]
+        var intPosition: Int
+        var objLastUse: ContinuousClock.Instant
+    }
+
+    /// Idle time after which a new click/scroll starts a fresh cycle.
+    private static let objCycleTimeout: Duration = .seconds(2)
+    private var objCycle: WindowCycle?
+
+    /// Raises the next (or previous) window of an app.
+    /// Cycles windows on this desktop; minimized and other-desktop windows are
+    /// only used when there's nothing on this desktop.
+    /// - Parameters:
+    ///   - objItem: The app's dock item.
+    ///   - intStep: +1 for next, -1 for previous.
+    ///   - arrObjWindows: Pre-fetched windows (front to back), or `nil` to fetch.
+    private func cycleWindows(of objItem: DockItem, intStep: Int, arrObjWindows: [WindowInfo]? = nil) {
+        guard let objApp = objItem.objRunningApp, !objApp.isTerminated else { return }
+
+        // Reuse the snapshot while the user keeps cycling the same app.
+        if var objCycle, objCycle.strBundleId == objItem.strBundleId,
+           ContinuousClock.now - objCycle.objLastUse < Self.objCycleTimeout {
+            let intCount = objCycle.arrObjWindows.count
+            objCycle.intPosition = ((objCycle.intPosition + intStep) % intCount + intCount) % intCount
+            objCycle.objLastUse = .now
+            self.objCycle = objCycle
+            objWindowService.raise(objCycle.arrObjWindows[objCycle.intPosition], of: objApp)
+            return
+        }
+
+        let arrObjAll = arrObjWindows ?? objWindowService.windows(for: objApp)
+        let arrObjHere = arrObjAll.filter { !$0.blnIsOnOtherSpace && !$0.blnIsMinimized }
+        let arrObjCandidates = arrObjHere.isEmpty ? arrObjAll : arrObjHere
+        guard !arrObjCandidates.isEmpty else { return }
+
+        // Position 0 is the window currently in front; step from there.
+        let intCount = arrObjCandidates.count
+        let intPosition = ((intStep % intCount) + intCount) % intCount
+        objCycle = WindowCycle(strBundleId: objItem.strBundleId, arrObjWindows: arrObjCandidates, intPosition: intPosition, objLastUse: .now)
+        objWindowService.raise(arrObjCandidates[intPosition], of: objApp)
+    }
+
+    /// Forgets the cycle snapshot.
+    private func resetCycle() {
+        objCycle = nil
+    }
+
+    /// Accumulated scroll distance toward the next window step.
+    private var fltScrollAccumulator: CGFloat = 0
+    /// Scroll distance (points) per window step on trackpads.
+    private static let fltScrollStep: CGFloat = 24
+
+    /// Scrolling over an icon flips through that app's windows.
+    /// - Parameters:
+    ///   - objPoint: Panel-local point.
+    ///   - objEvent: Scroll event.
+    private func handleScroll(at objPoint: CGPoint, objEvent: NSEvent) {
+        let (fltMain, _) = objGeometry.mainCross(fromPanelPoint: objPoint)
+        guard let intIndex = objGeometry.slotIndex(atMain: fltMain),
+              let objItem = objTracker.arrObjItems[safe: intIndex], objItem.blnIsRunning else { return }
+
+        // Vertical wheel or either trackpad axis; down/right = next window.
+        let fltDelta = abs(objEvent.scrollingDeltaY) >= abs(objEvent.scrollingDeltaX) ? -objEvent.scrollingDeltaY : objEvent.scrollingDeltaX
+        let intStep: Int
+        if objEvent.hasPreciseScrollingDeltas {
+            // Trackpad: one step per `fltScrollStep` points.
+            fltScrollAccumulator += fltDelta
+            guard abs(fltScrollAccumulator) >= Self.fltScrollStep else { return }
+            intStep = fltScrollAccumulator > 0 ? 1 : -1
+            fltScrollAccumulator = 0
+        } else {
+            // Mouse wheel: one step per notch.
+            guard fltDelta != 0 else { return }
+            intStep = fltDelta > 0 ? 1 : -1
+        }
+
+        hidePicker()
+        objShowPickerTask?.cancel()
+        cycleWindows(of: objItem, intStep: intStep)
     }
 
     // MARK: - File drops
@@ -766,8 +870,45 @@ final class DockController {
     private func handlePickerClose(_ objWindow: WindowInfo) {
         guard let intIndex = objPicker.intAnchorIndex else { return }
         objWindowService.close(objWindow)
-
         // Give the app a moment to actually close it (or show a save sheet).
+        refreshPicker(forIndex: intIndex)
+    }
+
+    /// Middle-click on a card: closes the window, or — when it has several tabs —
+    /// asks whether to close just the front tab or the whole window.
+    /// - Parameters:
+    ///   - objWindow: Middle-clicked window.
+    ///   - objEvent: The click (positions the menu).
+    private func handlePickerMiddleClick(_ objWindow: WindowInfo, objEvent: NSEvent) {
+        guard let intIndex = objPicker.intAnchorIndex,
+              let objApp = objTracker.arrObjItems[safe: intIndex]?.objRunningApp else { return }
+
+        let arrObjTabs = objWindowService.tabs(in: objWindow)
+        guard arrObjTabs.count > 1 else {
+            handlePickerClose(objWindow)
+            return
+        }
+
+        let strFrontTitle = arrObjTabs.first(where: \.blnIsSelected)?.strTitle ?? "Current Tab"
+        let objMenu = NSMenu()
+        objMenu.addItem(ClosureMenuItem("Close Tab “\(strFrontTitle.prefix(40))”") { [weak self] in
+            guard let self else { return }
+            self.objWindowService.closeFrontTab(of: objWindow, in: objApp)
+            self.refreshPicker(forIndex: intIndex)
+        })
+        objMenu.addItem(ClosureMenuItem("Close All \(arrObjTabs.count) Tabs") { [weak self] in
+            self?.handlePickerClose(objWindow)
+        })
+
+        blnMenuOpen = true
+        objPicker.popUpMenu(objMenu, with: objEvent)
+        blnMenuOpen = false
+        updateAutoHide()
+    }
+
+    /// Re-lists the picker's windows shortly after a change (e.g. a closed tab retitles its window).
+    /// - Parameter intIndex: Dock item the picker belongs to.
+    private func refreshPicker(forIndex intIndex: Int) {
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(200))
             guard let self, self.objPicker.intAnchorIndex == intIndex else { return }

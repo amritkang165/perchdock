@@ -31,6 +31,9 @@ final class WindowPickerController {
     /// Fired when the user clicks a card's close button.
     var onCloseWindow: ((WindowInfo) -> Void)?
 
+    /// Fired when the user middle-clicks a card.
+    var onMiddleClickWindow: ((WindowInfo, NSEvent) -> Void)?
+
     /// Whether thumbnails keep refreshing while the picker is open.
     var blnLivePreviews = true
 
@@ -60,6 +63,17 @@ final class WindowPickerController {
         objHostingView.onMouseUp = { [weak self] objPoint in
             self?.handleClick(objPoint)
         }
+        objHostingView.onMiddleMouseUp = { [weak self] objPoint, objEvent in
+            self?.handleMiddleClick(objPoint, objEvent: objEvent)
+        }
+    }
+
+    /// Shows a menu at the mouse, anchored to the picker.
+    /// - Parameters:
+    ///   - objMenu: Menu to show.
+    ///   - objEvent: Event that triggered it (positions the menu).
+    func popUpMenu(_ objMenu: NSMenu, with objEvent: NSEvent) {
+        NSMenu.popUpContextMenu(objMenu, with: objEvent, for: objHostingView)
     }
 
     /// Shows the picker for an app, centered above its dock icon.
@@ -270,11 +284,25 @@ final class WindowPickerController {
         case .notice:
             hide()
             AccessibilityPermission.openSystemSettings()
-        case .close(let intIndex) where objState.arrObjWindows[intIndex].objElement != nil:
+        case .close(let intIndex):
             onCloseWindow?(objState.arrObjWindows[intIndex])
-        case .card(let intIndex), .close(let intIndex):
+        case .card(let intIndex):
             onSelectWindow?(objState.arrObjWindows[intIndex])
         case nil:
+            break
+        }
+    }
+
+    /// Middle-click on a card (or its close button) asks to close that window.
+    /// - Parameters:
+    ///   - objPoint: Local click point.
+    ///   - objEvent: The click event.
+    private func handleMiddleClick(_ objPoint: CGPoint, objEvent: NSEvent) {
+        let objHit = WindowPickerLayout.hit(at: objPoint, count: objState.arrObjWindows.count, blnNotice: objState.blnNeedsPermission)
+        switch objHit {
+        case .card(let intIndex), .close(let intIndex):
+            onMiddleClickWindow?(objState.arrObjWindows[intIndex], objEvent)
+        default:
             break
         }
     }

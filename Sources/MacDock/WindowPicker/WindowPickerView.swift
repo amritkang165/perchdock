@@ -220,8 +220,7 @@ private struct WindowCardView: View {
                         }
                     }
 
-                // Only windows we have an AX handle for can be closed.
-                if blnIsHovered && objWindow.objElement != nil {
+                if blnIsHovered {
                     closeButton
                         .padding(WindowPickerLayout.fltCloseInset)
                         .transition(.opacity.combined(with: .scale(scale: 0.7)))
