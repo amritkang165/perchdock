@@ -77,6 +77,22 @@ final class DockController {
         objPanel.orderFrontRegardless()
     }
 
+    /// Debug aid: rapidly switches the picker across every running app, the
+    /// situation that exposes stale-index bugs when window counts differ.
+    /// - Parameter intRounds: Number of passes over the dock.
+    func debugCyclePickers(intRounds: Int) {
+        Task { [weak self] in
+            for _ in 0..<intRounds {
+                guard let self else { return }
+                for intIndex in self.objTracker.arrObjItems.indices where self.objTracker.arrObjItems[intIndex].blnIsRunning {
+                    self.showPicker(forIndex: intIndex, arrObjWindows: nil)
+                    try? await Task.sleep(for: .milliseconds(60))
+                }
+            }
+            self?.hidePicker()
+        }
+    }
+
     // MARK: - Layout
 
     /// Sizes the panel to fit the icons and centers it at the bottom of the main display.

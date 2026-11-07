@@ -48,6 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         buildStatusItem()
 
+        // Debug aid: `open MacDock.app --args --cycle-pickers` stress-tests picker switching.
+        if CommandLine.arguments.contains("--cycle-pickers") {
+            objController.debugCyclePickers(intRounds: 5)
+        }
+
         // Debug aid: `open MacDock.app --args --dump-windows` logs every app's windows.
         if CommandLine.arguments.contains("--dump-windows") {
             let objLogger = Logger(subsystem: "com.slynck.macdock", category: "dump")

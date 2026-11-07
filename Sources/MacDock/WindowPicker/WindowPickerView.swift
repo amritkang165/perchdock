@@ -150,23 +150,38 @@ struct WindowPickerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
     }
 
+    /// A card plus its position, so rows never index back into a list that may have shrunk.
+    private struct Cell: Identifiable {
+        let intIndex: Int
+        let objWindow: WindowInfo
+        var id: Int { objWindow.id }
+    }
+
+    /// A row of cells, identified by its first window.
+    private struct Row: Identifiable {
+        let arrObjCells: [Cell]
+        var id: Int { arrObjCells.first?.id ?? 0 }
+    }
+
     /// Cards in rows of up to `intMaxColumns`.
     private var cardGrid: some View {
-        let intCount = objState.arrObjWindows.count
-        let intColumns = WindowPickerLayout.columns(forCount: intCount)
-        let intRows = WindowPickerLayout.rows(forCount: intCount)
+        // Snapshot the windows into rows up front; ForEach only sees value copies.
+        let arrObjCells = objState.arrObjWindows.enumerated().map { Cell(intIndex: $0.offset, objWindow: $0.element) }
+        let intColumns = WindowPickerLayout.columns(forCount: arrObjCells.count)
+        let arrObjRows = stride(from: 0, to: arrObjCells.count, by: intColumns).map {
+            Row(arrObjCells: Array(arrObjCells[$0..<min($0 + intColumns, arrObjCells.count)]))
+        }
 
         return VStack(alignment: .leading, spacing: WindowPickerLayout.fltCardSpacing) {
-            ForEach(0..<intRows, id: \.self) { intRow in
+            ForEach(arrObjRows) { objRow in
                 HStack(spacing: WindowPickerLayout.fltCardSpacing) {
-                    ForEach(intRow * intColumns..<min((intRow + 1) * intColumns, intCount), id: \.self) { intIndex in
-                        let objWindow = objState.arrObjWindows[intIndex]
+                    ForEach(objRow.arrObjCells) { objCell in
                         WindowCardView(
-                            objWindow: objWindow,
-                            objThumbnail: objState.dictObjThumbnails[objWindow.id],
+                            objWindow: objCell.objWindow,
+                            objThumbnail: objState.dictObjThumbnails[objCell.objWindow.id],
                             objAppIcon: objState.objAppIcon,
-                            blnIsHovered: objState.intHoveredCard == intIndex,
-                            blnIsCloseHovered: objState.objHoveredHit == .close(intIndex)
+                            blnIsHovered: objState.intHoveredCard == objCell.intIndex,
+                            blnIsCloseHovered: objState.objHoveredHit == .close(objCell.intIndex)
                         )
                     }
                 }
