@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-
 /// SwiftUI host that reports mouse activity and file drops in panel coordinates
 /// (bottom-left origin).
 ///

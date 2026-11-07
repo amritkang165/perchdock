@@ -12,6 +12,9 @@ final class WindowPickerController {
     private let objLivePreviewService = LivePreviewService()
     private var objThumbnailTask: Task<Void, Never>?
     private var objLastAnchorPoint: CGPoint = .zero
+    private var objLocalMiddleMonitor: Any?
+    private var objGlobalMiddleMonitor: Any?
+    private var dblLastMiddleTimestamp: TimeInterval = -1
 
     /// Whether the picker is on screen (or fading in).
     private(set) var blnIsVisible = false
@@ -35,7 +38,7 @@ final class WindowPickerController {
     var onCloseWindow: ((WindowInfo) -> Void)?
 
     /// Fired when the user middle-clicks a card.
-    var onMiddleClickWindow: ((WindowInfo, NSEvent) -> Void)?
+    var onMiddleClickWindow: ((WindowInfo) -> Void)?
 
     /// Fired when the user right-clicks a card.
     var onRightClickWindow: ((WindowInfo, NSEvent) -> Void)?
@@ -69,9 +72,7 @@ final class WindowPickerController {
         objHostingView.onMouseUp = { [weak self] objPoint in
             self?.handleClick(objPoint)
         }
-        objHostingView.onMiddleMouseUp = { [weak self] objPoint, objEvent in
-            self?.handleMiddleClick(objPoint, objEvent: objEvent)
-        }
+        installMiddleClickMonitors()
         objHostingView.onRightMouseDown = { [weak self] objPoint, objEvent in
             guard let self else { return }
             let objHit = WindowPickerLayout.hit(at: objPoint, count: self.objState.arrObjWindows.count, blnNotice: self.objState.blnNeedsPermission)
@@ -84,12 +85,11 @@ final class WindowPickerController {
         }
     }
 
-    /// Shows a menu at the mouse, anchored to the picker.
-    /// - Parameters:
-    ///   - objMenu: Menu to show.
-    ///   - objEvent: Event that triggered it (positions the menu).
-    func popUpMenu(_ objMenu: NSMenu, with objEvent: NSEvent) {
-        NSMenu.popUpContextMenu(objMenu, with: objEvent, for: objHostingView)
+    /// Shows a menu at the mouse (positioned on screen, since the click that opened
+    /// it may have been delivered to another app's window).
+    /// - Parameter objMenu: Menu to show.
+    func popUpMenu(_ objMenu: NSMenu) {
+        objMenu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     /// Shows the picker for an app, centered above its dock icon.
@@ -310,17 +310,54 @@ final class WindowPickerController {
         }
     }
 
+    /// Watches middle-button releases app-wide and system-wide. AppKit's normal
+    /// routing doesn't reliably hand them to the picker (an inactive app's panel,
+    /// with live thumbnail views inside SwiftUI), so the cursor position decides.
+    private func installMiddleClickMonitors() {
+        objLocalMiddleMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseUp) { [weak self] objEvent in
+            let intButton = objEvent.buttonNumber
+            let dblTimestamp = objEvent.timestamp
+            let blnHandled = MainActor.assumeIsolated {
+                self?.handleMiddleClick(intButton: intButton, dblTimestamp: dblTimestamp) ?? false
+            }
+            // Swallow it when handled so it isn't delivered a second time.
+            return blnHandled ? nil : objEvent
+        }
+        objGlobalMiddleMonitor = NSEvent.addGlobalMonitorForEvents(matching: .otherMouseUp) { [weak self] objEvent in
+            let intButton = objEvent.buttonNumber
+            let dblTimestamp = objEvent.timestamp
+            MainActor.assumeIsolated {
+                _ = self?.handleMiddleClick(intButton: intButton, dblTimestamp: dblTimestamp)
+            }
+        }
+    }
+
     /// Middle-click on a card (or its close button) asks to close that window.
     /// - Parameters:
-    ///   - objPoint: Local click point.
-    ///   - objEvent: The click event.
-    private func handleMiddleClick(_ objPoint: CGPoint, objEvent: NSEvent) {
+    ///   - intButton: Released button number.
+    ///   - dblTimestamp: Event time (identifies the click).
+    /// - Returns: Whether the click landed on a card.
+    private func handleMiddleClick(intButton: Int, dblTimestamp: TimeInterval) -> Bool {
+        // Middle button only (extra mouse buttons are 3+), and only once per click
+        // in case both monitors see it.
+        guard intButton == 2, blnIsVisible, dblTimestamp != dblLastMiddleTimestamp else { return false }
+
+        let objMouse = NSEvent.mouseLocation
+        guard objPanel.frame.contains(objMouse) else { return false }
+        let objPoint = CGPoint(x: objMouse.x - objPanel.frame.minX, y: objMouse.y - objPanel.frame.minY)
         let objHit = WindowPickerLayout.hit(at: objPoint, count: objState.arrObjWindows.count, blnNotice: objState.blnNeedsPermission)
+
         switch objHit {
         case .card(let intIndex), .close(let intIndex):
-            onMiddleClickWindow?(objState.arrObjWindows[intIndex], objEvent)
+            dblLastMiddleTimestamp = dblTimestamp
+            let objWindow = objState.arrObjWindows[intIndex]
+            // Act after the monitor returns: the handler may open a (blocking) menu.
+            Task { @MainActor [weak self] in
+                self?.onMiddleClickWindow?(objWindow)
+            }
+            return true
         default:
-            break
+            return false
         }
     }
 }

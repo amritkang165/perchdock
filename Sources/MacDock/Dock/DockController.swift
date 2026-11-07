@@ -146,8 +146,8 @@ final class DockController {
         objPicker.onCloseWindow = { [weak self] objWindow in
             self?.handlePickerClose(objWindow)
         }
-        objPicker.onMiddleClickWindow = { [weak self] objWindow, objEvent in
-            self?.handlePickerMiddleClick(objWindow, objEvent: objEvent)
+        objPicker.onMiddleClickWindow = { [weak self] objWindow in
+            self?.handlePickerMiddleClick(objWindow)
         }
         objPicker.onRightClickWindow = { [weak self] objWindow, objEvent in
             self?.handlePickerRightClick(objWindow, objEvent: objEvent)
@@ -1375,10 +1375,8 @@ final class DockController {
 
     /// Middle-click on a card: closes the window, or — when it has several tabs —
     /// asks whether to close just the front tab or the whole window.
-    /// - Parameters:
-    ///   - objWindow: Middle-clicked window.
-    ///   - objEvent: The click (positions the menu).
-    private func handlePickerMiddleClick(_ objWindow: WindowInfo, objEvent: NSEvent) {
+    /// - Parameter objWindow: Middle-clicked window.
+    private func handlePickerMiddleClick(_ objWindow: WindowInfo) {
         guard let intIndex = objPicker.intAnchorIndex,
               let objApp = objTracker.arrObjItems[safe: intIndex]?.objRunningApp else { return }
 
@@ -1400,7 +1398,7 @@ final class DockController {
         })
 
         blnMenuOpen = true
-        objPicker.popUpMenu(objMenu, with: objEvent)
+        objPicker.popUpMenu(objMenu)
         blnMenuOpen = false
         updateAutoHide()
     }
@@ -1434,7 +1432,7 @@ final class DockController {
         })
 
         blnMenuOpen = true
-        objPicker.popUpMenu(objMenu, with: objEvent)
+        objPicker.popUpMenu(objMenu)
         blnMenuOpen = false
         updateAutoHide()
     }
