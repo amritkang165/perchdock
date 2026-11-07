@@ -317,7 +317,8 @@ private struct WindowCardView: View {
             .foregroundStyle(Color.white)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(Capsule().fill(Color.green))
+            // A softer green than the system one, so it doesn't glare over thumbnails.
+            .background(Capsule().fill(Color(hue: 0.37, saturation: 0.55, brightness: 0.62)))
             .shadow(color: .black.opacity(0.2), radius: 1.5, y: 0.5)
     }
 

@@ -1399,10 +1399,12 @@ final class DockController {
         }
     }
 
-    /// Builds the context menu for an app.
-    /// - Parameter objItem: The app's item.
+    /// Builds the context menu for an app (in the bar, or inside a group's popover).
+    /// - Parameters:
+    ///   - objItem: The app's item.
+    ///   - strGroupId: The group it's shown in, if right-clicked inside a group popover.
     /// - Returns: A populated menu.
-    private func buildAppMenu(for objItem: DockItem) -> NSMenu {
+    private func buildAppMenu(for objItem: DockItem, strGroupId: String? = nil) -> NSMenu {
         let objMenu = NSMenu()
         let objApp = objItem.objRunningApp.flatMap { $0.isTerminated ? nil : $0 }
 
@@ -1441,30 +1443,51 @@ final class DockController {
         }
 
         let strId = objItem.strBundleId
-        objMenu.addItem(ClosureMenuItem("Keep in Dock", objState: objItem.blnIsPinned ? .on : .off) { [weak self] in
-            guard let self else { return }
-            if objItem.blnIsPinned {
-                self.objTracker.unpin(strId)
-            } else {
-                self.objTracker.pin(strId)
-            }
-        })
-
-        // Groups: start one with this app, or move it into an existing one.
-        objMenu.addItem(ClosureMenuItem("New Group with “\(objItem.strName)”") { [weak self] in
-            self?.objTracker.createGroup(with: strId)
-        })
         let arrObjGroups = objTracker.groups()
-        if !arrObjGroups.isEmpty {
-            let objGroupsItem = NSMenuItem(title: "Add to Group", action: nil, keyEquivalent: "")
-            let objSubmenu = NSMenu()
-            for objGroup in arrObjGroups {
-                objSubmenu.addItem(ClosureMenuItem(objGroup.strName) { [weak self] in
-                    self?.objTracker.add(strId, toGroup: objGroup.strId)
-                })
+        if let strGroupId {
+            // Inside a group: it's kept by the group, so offer leaving or switching groups instead.
+            objMenu.addItem(ClosureMenuItem("Remove from Group") { [weak self] in
+                self?.objGrid.hide()
+                self?.objTracker.remove(strId, fromGroup: strGroupId)
+            })
+            let arrObjOthers = arrObjGroups.filter { $0.strId != strGroupId }
+            if !arrObjOthers.isEmpty {
+                let objMoveItem = NSMenuItem(title: "Move to Group", action: nil, keyEquivalent: "")
+                let objSubmenu = NSMenu()
+                for objGroup in arrObjOthers {
+                    objSubmenu.addItem(ClosureMenuItem(objGroup.strName) { [weak self] in
+                        self?.objGrid.hide()
+                        self?.objTracker.add(strId, toGroup: objGroup.strId)
+                    })
+                }
+                objMoveItem.submenu = objSubmenu
+                objMenu.addItem(objMoveItem)
             }
-            objGroupsItem.submenu = objSubmenu
-            objMenu.addItem(objGroupsItem)
+        } else {
+            objMenu.addItem(ClosureMenuItem("Keep in Dock", objState: objItem.blnIsPinned ? .on : .off) { [weak self] in
+                guard let self else { return }
+                if objItem.blnIsPinned {
+                    self.objTracker.unpin(strId)
+                } else {
+                    self.objTracker.pin(strId)
+                }
+            })
+
+            // Groups: start one with this app, or move it into an existing one.
+            objMenu.addItem(ClosureMenuItem("New Group with “\(objItem.strName)”") { [weak self] in
+                self?.objTracker.createGroup(with: strId)
+            })
+            if !arrObjGroups.isEmpty {
+                let objGroupsItem = NSMenuItem(title: "Add to Group", action: nil, keyEquivalent: "")
+                let objSubmenu = NSMenu()
+                for objGroup in arrObjGroups {
+                    objSubmenu.addItem(ClosureMenuItem(objGroup.strName) { [weak self] in
+                        self?.objTracker.add(strId, toGroup: objGroup.strId)
+                    })
+                }
+                objGroupsItem.submenu = objSubmenu
+                objMenu.addItem(objGroupsItem)
+            }
         }
 
         if let objAppUrl = objItem.objAppUrl ?? objApp?.bundleURL {
@@ -1775,16 +1798,8 @@ final class DockController {
             }
             objGrid.onRightClick = { [weak self] intTile, objEvent in
                 guard let self, let objMember = arrObjMembers[safe: intTile] else { return }
-                let objMenu = NSMenu()
-                objMenu.addItem(ClosureMenuItem("Remove “\(objMember.strName)” from Group") { [weak self] in
-                    self?.objGrid.hide()
-                    self?.objTracker.remove(objMember.strBundleId, fromGroup: strGroupId)
-                })
-                if let objApp = objMember.objRunningApp, !objApp.isTerminated {
-                    objMenu.addItem(ClosureMenuItem("Quit \(objMember.strName)") {
-                        objApp.terminate()
-                    })
-                }
+                // Same menu as the app gets in the bar, with group options instead of pinning.
+                let objMenu = self.buildAppMenu(for: objMember, strGroupId: strGroupId)
                 NSMenu.popUpContextMenu(objMenu, with: objEvent, for: self.objHostingView)
             }
             objGrid.onFooter = nil

@@ -139,11 +139,15 @@ final class NowPlayingService {
     }
 
     /// Sends a playback command to whatever is playing.
+    ///
+    /// The command is delivered asynchronously, so the helper waits briefly before
+    /// exiting; quitting right away drops it silently (while still reporting success).
     /// - Parameter enmCommand: Command.
     func send(_ enmCommand: Command) {
         let strScript = Self.strPrelude + """
         ObjC.bindFunction('MRMediaRemoteSendCommand', ['bool', ['int', 'id']]);
         $.MRMediaRemoteSendCommand(\(enmCommand.rawValue), $());
+        delay(0.5);
         """
         let objProcess = Process()
         objProcess.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")

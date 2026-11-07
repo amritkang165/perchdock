@@ -620,17 +620,57 @@ final class AppTracker {
     /// Checks every few seconds whether the Trash has anything in it.
     private func watchTrash() {
         objTrashTask = Task { [weak self] in
+            var intLastEntries: Int?
             while !Task.isCancelled {
-                let objTrashUrl = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
-                // Unreadable (no Full Disk Access) counts as empty.
-                let arrStrContents = (try? FileManager.default.contentsOfDirectory(atPath: objTrashUrl.path)) ?? []
-                let blnFull = arrStrContents.contains { $0 != ".DS_Store" && $0 != ".localized" }
-                if let self, blnFull != self.blnTrashWasFull {
-                    self.blnTrashWasFull = blnFull
-                    self.rebuild()
+                // Only re-evaluate when the entry count moves (the Finder fallback is an Apple Event).
+                let intEntries = Self.trashEntryCount()
+                if intEntries != intLastEntries {
+                    intLastEntries = intEntries
+                    let blnFull = Self.isTrashFull(intEntries: intEntries)
+                    if let self, blnFull != self.blnTrashWasFull {
+                        self.blnTrashWasFull = blnFull
+                        self.rebuild()
+                    }
                 }
-                try? await Task.sleep(for: .seconds(3))
+                try? await Task.sleep(for: .seconds(2))
             }
+        }
+    }
+
+    /// Number of entries in `~/.Trash` (including hidden ones like `.DS_Store`).
+    ///
+    /// Listing the Trash needs Full Disk Access, but its own metadata doesn't: on APFS
+    /// a directory's link count is its number of entries plus 2 (`.` and `..`).
+    /// - Returns: Entry count, or `nil` if even that can't be read.
+    private static func trashEntryCount() -> Int? {
+        let strPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash").path
+        // Readable (Full Disk Access): count real items exactly (2+ reads as unambiguously full).
+        if let arrStrContents = try? FileManager.default.contentsOfDirectory(atPath: strPath) {
+            let intItems = arrStrContents.filter { $0 != ".DS_Store" && $0 != ".localized" }.count
+            return intItems == 0 ? 0 : intItems + 1
+        }
+        var objStat = stat()
+        guard stat(strPath, &objStat) == 0 else { return nil }
+        return max(0, Int(objStat.st_nlink) - 2)
+    }
+
+    /// Whether the Trash holds anything, from its entry count.
+    ///
+    /// Finder usually leaves a `.DS_Store` behind, so one entry is ambiguous: then
+    /// Finder is asked directly (the same permission Empty Trash uses).
+    /// - Parameter intEntries: Entry count, if known.
+    /// - Returns: Whether it's full.
+    private static func isTrashFull(intEntries: Int?) -> Bool {
+        guard let intEntries else { return false }
+        switch intEntries {
+        case 0: return false
+        case 1:
+            var objError: NSDictionary?
+            let objResult = NSAppleScript(source: "tell application \"Finder\" to count items of trash")?
+                .executeAndReturnError(&objError)
+            // Without Finder permission, assume the lone entry is Finder's .DS_Store.
+            return objError == nil && (objResult?.int32Value ?? 0) > 0
+        default: return true
         }
     }
 }
