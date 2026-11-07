@@ -30,6 +30,9 @@ final class WindowPickerController {
     /// Fired when the user clicks a card's close button.
     var onCloseWindow: ((WindowInfo) -> Void)?
 
+    /// Whether thumbnails keep refreshing while the picker is open.
+    var blnLivePreviews = true
+
     /// Dock edge, which decides whether the picker opens above or beside the icon.
     var enmPosition: DockPosition = .bottom
 
@@ -194,14 +197,24 @@ final class WindowPickerController {
             uniquingKeysWith: { intFirst, _ in intFirst }
         )
         let arrIntWindowIds = arrObjWindows.compactMap(\.intWindowId)
+        // Only windows on this desktop change visibly; others keep their snapshot.
+        let arrIntLiveIds = blnLivePreviews
+            ? arrObjWindows.filter { !$0.blnIsOnOtherSpace && !$0.blnIsMinimized }.compactMap(\.intWindowId)
+            : []
 
         objThumbnailTask = Task { [weak self] in
             guard let self else { return }
-            await self.objThumbnailService.captureThumbnails(for: arrIntWindowIds) { intWindowId, objImage in
+            await self.objThumbnailService.captureThumbnails(for: arrIntWindowIds, arrIntLiveIds: arrIntLiveIds) { intWindowId, objImage in
                 // Ignore results that land after the picker moved to another app or closed.
                 guard self.blnIsVisible, self.intAnchorIndex == intAnchorIndex,
                       let intCardId = dictIntIdsByWindowId[intWindowId] else { return }
-                withAnimation(.easeOut(duration: 0.15)) {
+                if self.objState.dictObjThumbnails[intCardId] == nil {
+                    // First image: fade in over the icon placeholder.
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        self.objState.dictObjThumbnails[intCardId] = objImage
+                    }
+                } else {
+                    // Live update: swap frames without animating.
                     self.objState.dictObjThumbnails[intCardId] = objImage
                 }
             }

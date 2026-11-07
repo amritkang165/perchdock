@@ -90,8 +90,9 @@ private struct BehaviorTab: View {
                 LabeledSlider(strTitle: "Window preview delay", fltValue: $objSettings.fltPreviewDelay, objRange: 0...1, fltStep: 0.02) {
                     String(format: "%.2fs", $0)
                 }
+                Toggle("Live previews", isOn: $objSettings.blnLivePreviews)
             } footer: {
-                Text("How long to hover an icon before its windows appear.")
+                Text("How long to hover an icon before its windows appear. Live previews keep updating while open; windows on other desktops show their last snapshot.")
                     .foregroundStyle(.secondary)
             }
         }

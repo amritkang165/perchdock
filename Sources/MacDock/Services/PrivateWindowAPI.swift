@@ -87,6 +87,39 @@ enum PrivateWindowAPI {
         return fnGetActiveSpace(fnMainConnection())
     }
 
+    private typealias CreateWithRemoteTokenFn = @convention(c) (CFData) -> Unmanaged<AXUIElement>?
+    private static let fnCreateWithRemoteToken: CreateWithRemoteTokenFn? = symbol("_AXUIElementCreateWithRemoteToken", objHandle: objDefaultHandle)
+
+    /// Highest AX element ID probed when searching for an off-Space window.
+    private static let intMaxProbedElementId: UInt64 = 1000
+
+    /// Finds the AX element of a window on another Space. `kAXWindowsAttribute`
+    /// only lists current-Space windows, but every window's element can still be
+    /// rebuilt from a remote token (pid + "coco" marker + element ID) by probing
+    /// element IDs, the way AltTab does. Raising that element makes macOS switch
+    /// to the window's Space.
+    /// - Parameters:
+    ///   - intWindowId: Window to find.
+    ///   - intPid: Owning process ID.
+    /// - Returns: Its AX element, or `nil` if not found or the API is unavailable.
+    static func axElement(forWindowId intWindowId: CGWindowID, intPid: pid_t) -> AXUIElement? {
+        guard let fnCreateWithRemoteToken else { return nil }
+
+        // Token layout: pid (4 bytes) | 0 (4) | "coco" (4) | element ID (8).
+        var objToken = Data(count: 20)
+        withUnsafeBytes(of: intPid.littleEndian) { objToken.replaceSubrange(0..<4, with: $0) }
+        withUnsafeBytes(of: Int32(0x636f_636f).littleEndian) { objToken.replaceSubrange(8..<12, with: $0) }
+
+        for intElementId in 0..<intMaxProbedElementId {
+            withUnsafeBytes(of: intElementId.littleEndian) { objToken.replaceSubrange(12..<20, with: $0) }
+            guard let objElement = fnCreateWithRemoteToken(objToken as CFData)?.takeRetainedValue() else { continue }
+            if windowId(for: objElement) == intWindowId {
+                return objElement
+            }
+        }
+        return nil
+    }
+
     /// Maps an AX window element to its window-server ID.
     /// - Parameter objElement: An AX window.
     /// - Returns: The `CGWindowID`, or `nil` if unavailable.

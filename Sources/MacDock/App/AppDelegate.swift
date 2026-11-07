@@ -131,10 +131,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let objLogger = Logger(subsystem: "com.slynck.macdock", category: "dump")
             for objItem in objAppTracker.arrObjItems {
                 guard let objApp = objItem.objRunningApp else { continue }
-                let arrStrTitles = objWindowService.windows(for: objApp).map {
+                let arrObjWindows = objWindowService.windows(for: objApp)
+                let arrStrTitles = arrObjWindows.map {
                     $0.strTitle + " [\($0.strDesktopLabel ?? "-")]" + ($0.blnIsMinimized ? " [minimized]" : "")
                 }
                 objLogger.notice("\(objItem.strName, privacy: .public): \(arrStrTitles, privacy: .public)")
+
+                // Check that other-desktop windows can be resolved to AX elements (needed to switch to them).
+                for objWindow in arrObjWindows where objWindow.blnIsOnOtherSpace {
+                    guard let intWindowId = objWindow.intWindowId else { continue }
+                    let objStart = ContinuousClock.now
+                    let blnFound = PrivateWindowAPI.axElement(forWindowId: intWindowId, intPid: objApp.processIdentifier) != nil
+                    objLogger.notice("  other-desktop \(intWindowId) \(objWindow.strTitle, privacy: .public): AX \(blnFound ? "found" : "NOT found", privacy: .public) in \(ContinuousClock.now - objStart, privacy: .public)")
+                }
             }
         }
     }

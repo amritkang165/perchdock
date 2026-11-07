@@ -703,6 +703,7 @@ final class DockController {
     ///   - arrObjWindows: Pre-fetched windows, or `nil` to fetch now.
     private func showPicker(forIndex intIndex: Int, arrObjWindows: [WindowInfo]?) {
         guard blnShown, let objItem = objTracker.arrObjItems[safe: intIndex] else { return }
+        objPicker.blnLivePreviews = objSettings.blnLivePreviews
 
         guard let objApp = objItem.objRunningApp, !objApp.isTerminated else {
             hidePicker()

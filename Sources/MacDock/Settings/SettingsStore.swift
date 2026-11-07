@@ -59,6 +59,7 @@ final class SettingsStore {
         static let strHideNativeDock = "HideNativeDock"
         static let strPinned = "PinnedBundleIds"
         static let strShowLabels = "ShowLabels"
+        static let strLivePreviews = "LivePreviews"
         static let strDisplayMode = "DisplayMode"
     }
 
@@ -112,6 +113,9 @@ final class SettingsStore {
     /// Whether the app's name appears above a hovered icon.
     var blnShowLabels: Bool { didSet { objDefaults.set(blnShowLabels, forKey: Key.strShowLabels) } }
 
+    /// Whether window previews keep updating while the picker is open.
+    var blnLivePreviews: Bool { didSet { objDefaults.set(blnLivePreviews, forKey: Key.strLivePreviews) } }
+
     /// Which display the dock lives on.
     var enmDisplayMode: DockDisplayMode { didSet { objDefaults.set(enmDisplayMode.rawValue, forKey: Key.strDisplayMode) } }
 
@@ -140,6 +144,7 @@ final class SettingsStore {
             Key.strHideNativeDock: false,
             Key.strPinned: Self.arrStrDefaultPinned,
             Key.strShowLabels: true,
+            Key.strLivePreviews: true,
             Key.strDisplayMode: DockDisplayMode.main.rawValue,
         ])
 
@@ -154,6 +159,7 @@ final class SettingsStore {
         blnHideNativeDock = objDefaults.bool(forKey: Key.strHideNativeDock)
         arrStrPinnedBundleIds = objDefaults.stringArray(forKey: Key.strPinned) ?? Self.arrStrDefaultPinned
         blnShowLabels = objDefaults.bool(forKey: Key.strShowLabels)
+        blnLivePreviews = objDefaults.bool(forKey: Key.strLivePreviews)
         enmDisplayMode = DockDisplayMode(rawValue: objDefaults.string(forKey: Key.strDisplayMode) ?? "") ?? .main
         blnLaunchAtLogin = SMAppService.mainApp.status == .enabled
     }

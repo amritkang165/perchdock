@@ -77,6 +77,15 @@ final class WindowService {
             AXUIElementSetAttributeValue(objElement, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         }
 
+        // Other-Space windows have no AX handle from the window list; recover it so
+        // AXRaise can pull macOS over to that Space (activation alone won't when the
+        // app is already frontmost).
+        var objElement = objWindow.objElement
+        if objElement == nil, let intWindowId = objWindow.intWindowId {
+            objElement = PrivateWindowAPI.axElement(forWindowId: intWindowId, intPid: objApp.processIdentifier)
+            objLogger.debug("Other-Space window \(intWindowId): AX element \(objElement == nil ? "not found" : "found", privacy: .public)")
+        }
+
         // Preferred path: ask the window server to front this exact window.
         // Fallback: activate the app, then rely on AXRaise below.
         var blnFocused = false
@@ -87,7 +96,7 @@ final class WindowService {
             objApp.activate()
         }
 
-        if let objElement = objWindow.objElement {
+        if let objElement {
             axRaise(objElement)
         } else if let intWindowId = objWindow.intWindowId {
             // Other-Space window: once the Space switch settles, AX can see it; raise it then.
