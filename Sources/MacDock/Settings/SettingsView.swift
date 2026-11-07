@@ -61,6 +61,16 @@ private struct AppearanceTab: View {
             }
 
             Section {
+                Picker("Glass", selection: $objSettings.enmGlassStyle) {
+                    ForEach(GlassStyle.allCases) { enmStyle in
+                        Text(enmStyle.strTitle).tag(enmStyle)
+                    }
+                }
+                .pickerStyle(.segmented)
+                // 100% shows only the glass; lower values fade in a solid backing.
+                LabeledSlider(strTitle: "Transparency", fltValue: $objSettings.fltTransparency, objRange: 0...1, fltStep: 0.05) {
+                    "\(Int(($0 * 100).rounded()))%"
+                }
                 Picker("Tint", selection: $objSettings.enmTint) {
                     ForEach(DockTint.allCases) { enmTint in
                         Text(enmTint.strTitle).tag(enmTint)

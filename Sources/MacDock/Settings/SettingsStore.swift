@@ -248,6 +248,8 @@ final class SettingsStore {
         static let strShowBattery = "ShowBatteryWidget"
         static let strNowPlayingSize = "NowPlayingWidgetSize"
         static let strSeekBarStyle = "NowPlayingSeekBarStyle"
+        static let strGlassStyle = "GlassStyle"
+        static let strTransparency = "Transparency"
     }
 
     /// Pins used on first launch.
@@ -361,6 +363,22 @@ final class SettingsStore {
     /// Tint strength (0 = clear glass, 1 = solid color).
     var fltTintStrength: Double { didSet { objDefaults.set(fltTintStrength, forKey: Key.strTintStrength) } }
 
+    /// How the dock and its popovers are rendered (mirrored to `GlassAppearance`).
+    var enmGlassStyle: GlassStyle {
+        didSet {
+            objDefaults.set(enmGlassStyle.rawValue, forKey: Key.strGlassStyle)
+            GlassAppearance.shared.enmStyle = enmGlassStyle
+        }
+    }
+
+    /// Background transparency, 0 (solid) to 1 (glass only) (mirrored to `GlassAppearance`).
+    var fltTransparency: Double {
+        didSet {
+            objDefaults.set(fltTransparency, forKey: Key.strTransparency)
+            GlassAppearance.shared.fltTransparency = fltTransparency
+        }
+    }
+
     /// Tighter padding and spacing.
     var blnCompact: Bool { didSet { objDefaults.set(blnCompact, forKey: Key.strCompact) } }
 
@@ -407,6 +425,8 @@ final class SettingsStore {
             Key.strShowBattery: true,
             Key.strNowPlayingSize: NowPlayingSize.large.rawValue,
             Key.strSeekBarStyle: SeekBarStyle.squiggly.rawValue,
+            Key.strGlassStyle: GlassStyle.liquid.rawValue,
+            Key.strTransparency: 1.0,
         ])
 
         fltIconSize = objDefaults.double(forKey: Key.strIconSize)
@@ -437,6 +457,13 @@ final class SettingsStore {
         enmTint = DockTint(rawValue: objDefaults.string(forKey: Key.strTint) ?? "") ?? .none
         strTintHex = objDefaults.string(forKey: Key.strTintHex) ?? "#3B82F6"
         fltTintStrength = objDefaults.double(forKey: Key.strTintStrength)
+        let enmSavedGlassStyle = GlassStyle(rawValue: objDefaults.string(forKey: Key.strGlassStyle) ?? "") ?? .liquid
+        let fltSavedTransparency = objDefaults.double(forKey: Key.strTransparency)
+        enmGlassStyle = enmSavedGlassStyle
+        fltTransparency = fltSavedTransparency
+        // Observers don't run inside init; seed the shared appearance explicitly.
+        GlassAppearance.shared.enmStyle = enmSavedGlassStyle
+        GlassAppearance.shared.fltTransparency = fltSavedTransparency
         blnCompact = objDefaults.bool(forKey: Key.strCompact)
         enmIndicatorStyle = IndicatorStyle(rawValue: objDefaults.string(forKey: Key.strIndicatorStyle) ?? "") ?? .dot
         blnLaunchAtLogin = SMAppService.mainApp.status == .enabled

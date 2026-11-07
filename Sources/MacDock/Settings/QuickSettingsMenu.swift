@@ -38,6 +38,26 @@ enum QuickSettingsMenu {
             })
         }
 
+        objMenu.addItem(submenuItem("Transparency", strSymbol: "circle.lefthalf.filled") { objSubmenu in
+            for enmStyle in GlassStyle.allCases {
+                objSubmenu.addItem(ClosureMenuItem(enmStyle.strTitle,
+                                                   objState: objSettings.enmGlassStyle == enmStyle ? .on : .off) {
+                    objSettings.enmGlassStyle = enmStyle
+                })
+            }
+            objSubmenu.addItem(.separator())
+
+            // Presets for the transparency slider (fine-tune it in Settings).
+            for intPercent in [100, 75, 50, 25, 0] {
+                let fltValue = Double(intPercent) / 100
+                let strTitle = intPercent == 0 ? "Solid" : "\(intPercent)% Transparent"
+                let blnSelected = abs(objSettings.fltTransparency - fltValue) < 0.001
+                objSubmenu.addItem(ClosureMenuItem(strTitle, objState: blnSelected ? .on : .off) {
+                    objSettings.fltTransparency = fltValue
+                })
+            }
+        })
+
         objMenu.addItem(submenuItem("Widgets", strSymbol: "square.grid.2x2") { objSubmenu in
             objSubmenu.addItem(ClosureMenuItem("Now Playing", objState: objSettings.blnShowNowPlaying ? .on : .off) {
                 objSettings.blnShowNowPlaying.toggle()
