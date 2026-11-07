@@ -828,6 +828,12 @@ final class DockController {
         }
     }
 
+    /// Debug aid: opens the picker for one icon (stays until the mouse moves).
+    /// - Parameter intIndex: Dock item index.
+    func debugShowPicker(atIndex intIndex: Int) {
+        showPicker(forIndex: intIndex, arrObjWindows: nil)
+    }
+
     /// Debug aid: rapidly switches the picker across every running app, the
     /// situation that exposes stale-index bugs when window counts differ.
     /// - Parameter intRounds: Number of passes over the dock.

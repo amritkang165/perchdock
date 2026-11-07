@@ -9,6 +9,7 @@ final class WindowPickerController {
     private let objPanel: DockPanel
     private let objHostingView: TrackingHostingView<WindowPickerView>
     private let objThumbnailService: ThumbnailService
+    private let objLivePreviewService = LivePreviewService()
     private var objThumbnailTask: Task<Void, Never>?
     private var objLastAnchorPoint: CGPoint = .zero
 
@@ -89,9 +90,11 @@ final class WindowPickerController {
     ///   - objAnchorPoint: Screen point at the top-center of the icon.
     func showPermissionNotice(strAppName: String, intAnchorIndex: Int, objAnchorPoint: CGPoint) {
         objThumbnailTask?.cancel()
+        objLivePreviewService.stop()
         objState.blnNeedsPermission = true
         objState.arrObjWindows = []
         objState.dictObjThumbnails = [:]
+        objState.dictObjLiveViews = [:]
         present(strAppName: strAppName, intAnchorIndex: intAnchorIndex, objAnchorPoint: objAnchorPoint)
     }
 
@@ -102,6 +105,7 @@ final class WindowPickerController {
         blnMouseInside = false
         intAnchorIndex = nil
         objThumbnailTask?.cancel()
+        objLivePreviewService.stop()
 
         NSAnimationContext.runAnimationGroup({ objContext in
             objContext.duration = 0.1
@@ -190,6 +194,7 @@ final class WindowPickerController {
     ///   - intAnchorIndex: Dock item the capture belongs to (stale results are dropped).
     private func refreshThumbnails(for arrObjWindows: [WindowInfo], intAnchorIndex: Int) {
         objThumbnailTask?.cancel()
+        objLivePreviewService.stop()
         objThumbnailService.requestPermissionIfNeeded()
 
         let dictIntIdsByWindowId = Dictionary(
@@ -197,27 +202,35 @@ final class WindowPickerController {
             uniquingKeysWith: { intFirst, _ in intFirst }
         )
         let arrIntWindowIds = arrObjWindows.compactMap(\.intWindowId)
-        // Only windows on this desktop change visibly; others keep their snapshot.
-        let arrIntLiveIds = blnLivePreviews
-            ? arrObjWindows.filter { !$0.blnIsOnOtherSpace && !$0.blnIsMinimized }.compactMap(\.intWindowId)
-            : []
+
+        // Live views for windows on this desktop; others keep their snapshot
+        // (macOS doesn't render desktops you aren't looking at).
+        var dictObjLiveByWindowId: [CGWindowID: LiveThumbnailView] = [:]
+        var dictObjLiveByCardId: [Int: LiveThumbnailView] = [:]
+        if blnLivePreviews {
+            for objWindow in arrObjWindows where !objWindow.blnIsOnOtherSpace && !objWindow.blnIsMinimized {
+                guard let intWindowId = objWindow.intWindowId else { continue }
+                // Reuse the card's view when re-showing the same app, so it doesn't blank.
+                let objView = objState.dictObjLiveViews[objWindow.id] ?? LiveThumbnailView()
+                dictObjLiveByWindowId[intWindowId] = objView
+                dictObjLiveByCardId[objWindow.id] = objView
+            }
+        }
+        objState.dictObjLiveViews = dictObjLiveByCardId
 
         objThumbnailTask = Task { [weak self] in
             guard let self else { return }
-            await self.objThumbnailService.captureThumbnails(for: arrIntWindowIds, arrIntLiveIds: arrIntLiveIds) { intWindowId, objImage in
+            // Snapshots first: instant content for every card, including other desktops.
+            await self.objThumbnailService.captureThumbnails(for: arrIntWindowIds) { intWindowId, objImage in
                 // Ignore results that land after the picker moved to another app or closed.
                 guard self.blnIsVisible, self.intAnchorIndex == intAnchorIndex,
                       let intCardId = dictIntIdsByWindowId[intWindowId] else { return }
-                if self.objState.dictObjThumbnails[intCardId] == nil {
-                    // First image: fade in over the icon placeholder.
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        self.objState.dictObjThumbnails[intCardId] = objImage
-                    }
-                } else {
-                    // Live update: swap frames without animating.
+                withAnimation(.easeOut(duration: 0.15)) {
                     self.objState.dictObjThumbnails[intCardId] = objImage
                 }
             }
+            guard !Task.isCancelled, self.blnIsVisible, self.intAnchorIndex == intAnchorIndex else { return }
+            await self.objLivePreviewService.start(dictObjLiveByWindowId)
         }
     }
 

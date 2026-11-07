@@ -124,6 +124,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            let intIndex = Int(strArg.dropFirst("--magnify-at=".count)) {
             objController.debugMagnify(atIndex: intIndex)
         }
+        if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--show-picker=") }),
+           let intIndex = Int(strArg.dropFirst("--show-picker=".count)) {
+            objController.debugShowPicker(atIndex: intIndex)
+        }
         if arrStrArgs.contains("--open-settings") {
             objSettingsWindow.show()
         }

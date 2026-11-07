@@ -113,6 +113,8 @@ final class WindowPickerState {
     var arrObjWindows: [WindowInfo] = []
     /// Thumbnails keyed by `WindowInfo.id`.
     var dictObjThumbnails: [Int: NSImage] = [:]
+    /// 60 fps live views keyed by `WindowInfo.id` (current-desktop windows only).
+    var dictObjLiveViews: [Int: LiveThumbnailView] = [:]
     var objHoveredHit: WindowPickerLayout.Hit?
     /// When true, a single "grant Accessibility" row replaces the cards.
     var blnNeedsPermission = false
@@ -179,6 +181,7 @@ struct WindowPickerView: View {
                         WindowCardView(
                             objWindow: objCell.objWindow,
                             objThumbnail: objState.dictObjThumbnails[objCell.objWindow.id],
+                            objLiveView: objState.dictObjLiveViews[objCell.objWindow.id],
                             objAppIcon: objState.objAppIcon,
                             blnIsHovered: objState.intHoveredCard == objCell.intIndex,
                             blnIsCloseHovered: objState.objHoveredHit == .close(objCell.intIndex)
@@ -194,6 +197,7 @@ struct WindowPickerView: View {
 private struct WindowCardView: View {
     let objWindow: WindowInfo
     let objThumbnail: NSImage?
+    let objLiveView: LiveThumbnailView?
     let objAppIcon: NSImage?
     let blnIsHovered: Bool
     let blnIsCloseHovered: Bool
@@ -203,6 +207,12 @@ private struct WindowCardView: View {
             ZStack(alignment: .topTrailing) {
                 thumbnail
                     .frame(width: WindowPickerLayout.fltThumbWidth, height: WindowPickerLayout.fltThumbHeight)
+                    // Live frames draw over the snapshot (or placeholder) once streaming starts.
+                    .overlay {
+                        if let objLiveView {
+                            LiveThumbnailHost(objView: objLiveView)
+                        }
+                    }
                     .overlay(alignment: .topLeading) {
                         if let strDesktopLabel = objWindow.strDesktopLabel {
                             desktopBadge(strDesktopLabel)

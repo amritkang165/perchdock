@@ -36,46 +36,17 @@ final class ThumbnailService {
         dictObjCache[intWindowId]
     }
 
-    /// Pause between live-preview refreshes (about 5 updates per second).
-    private static let objLiveInterval: Duration = .milliseconds(200)
-
-    /// Captures fresh thumbnails, reporting each one as soon as it's ready, then
-    /// optionally keeps re-capturing some of them until the task is cancelled.
+    /// Captures fresh thumbnails, reporting each one as soon as it's ready.
     /// - Parameters:
-    ///   - arrIntWindowIds: Windows to capture once, in display order.
-    ///   - arrIntLiveIds: Windows to keep refreshing afterwards (empty = no live updates).
+    ///   - arrIntWindowIds: Windows to capture, in display order.
     ///   - onImage: Called on the main actor with each captured image.
-    func captureThumbnails(
-        for arrIntWindowIds: [CGWindowID],
-        arrIntLiveIds: [CGWindowID] = [],
-        onImage: (CGWindowID, NSImage) -> Void
-    ) async {
+    func captureThumbnails(for arrIntWindowIds: [CGWindowID], onImage: (CGWindowID, NSImage) -> Void) async {
         guard blnHasPermission, !arrIntWindowIds.isEmpty else { return }
 
         // One shareable-content query per picker open; it covers windows on all Spaces.
         guard let objContent = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false) else { return }
         let dictObjWindows = Dictionary(objContent.windows.map { ($0.windowID, $0) }, uniquingKeysWith: { objFirst, _ in objFirst })
 
-        await captureRound(arrIntWindowIds, dictObjWindows: dictObjWindows, onImage: onImage)
-
-        // Live mode: keep refreshing visible windows until the picker closes.
-        guard !arrIntLiveIds.isEmpty else { return }
-        while !Task.isCancelled {
-            try? await Task.sleep(for: Self.objLiveInterval)
-            await captureRound(arrIntLiveIds, dictObjWindows: dictObjWindows, onImage: onImage)
-        }
-    }
-
-    /// Captures each window once.
-    /// - Parameters:
-    ///   - arrIntWindowIds: Windows to capture.
-    ///   - dictObjWindows: Shareable windows by ID.
-    ///   - onImage: Called with each captured image.
-    private func captureRound(
-        _ arrIntWindowIds: [CGWindowID],
-        dictObjWindows: [CGWindowID: SCWindow],
-        onImage: (CGWindowID, NSImage) -> Void
-    ) async {
         for intWindowId in arrIntWindowIds {
             guard !Task.isCancelled else { return }
             guard let objWindow = dictObjWindows[intWindowId] else { continue }
