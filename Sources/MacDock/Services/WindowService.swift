@@ -12,6 +12,8 @@ struct WindowInfo: Identifiable {
     let blnIsMinimized: Bool
     let blnIsOnOtherSpace: Bool
     let intWindowId: CGWindowID?
+    /// "Desktop 2", "Full Screen", etc.; `nil` when minimized or unknown.
+    var strDesktopLabel: String? = nil
     /// AX handle; `nil` for windows on other Spaces, which AX can't see.
     let objElement: AXUIElement?
 }
@@ -41,7 +43,24 @@ final class WindowService {
         // Anything AX reported (even popups we filtered out) is on this Space, not another.
         let arrObjOtherSpaces = otherSpaceWindows(for: objApp, excluding: setIntSeenByAX)
 
-        return arrObjCurrentSpace + arrObjOtherSpaces
+        return labelDesktops(arrObjCurrentSpace + arrObjOtherSpaces)
+    }
+
+    /// Tags each window with the desktop it's on. Labels are only added when the
+    /// user has more than one Space, since "Desktop 1" everywhere is just noise.
+    /// - Parameter arrObjWindows: Windows to tag.
+    /// - Returns: The same windows with `strDesktopLabel` filled in where known.
+    private func labelDesktops(_ arrObjWindows: [WindowInfo]) -> [WindowInfo] {
+        let dictStrLabels = PrivateWindowAPI.desktopLabels()
+        guard dictStrLabels.count > 1 else { return arrObjWindows }
+
+        return arrObjWindows.map { objWindow in
+            guard !objWindow.blnIsMinimized, let intWindowId = objWindow.intWindowId,
+                  let intSpaceId = PrivateWindowAPI.spaces(for: intWindowId)?.first else { return objWindow }
+            var objTagged = objWindow
+            objTagged.strDesktopLabel = dictStrLabels[intSpaceId]
+            return objTagged
+        }
     }
 
     /// Brings one specific window to the front and gives it keyboard focus.
@@ -181,7 +200,7 @@ final class WindowService {
             if let intActiveSpace, arrIntSpaces.contains(intActiveSpace) { return nil }
 
             let strTitle = (dictWindow[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                ?? "\(objApp.localizedName ?? "Window") — other desktop"
+                ?? (objApp.localizedName ?? "Window")
 
             return WindowInfo(
                 id: Int(intWindowId),

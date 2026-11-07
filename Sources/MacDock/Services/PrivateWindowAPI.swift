@@ -48,6 +48,38 @@ enum PrivateWindowAPI {
         return (objResult as? [NSNumber])?.map(\.uint64Value) ?? []
     }
 
+    private typealias CopyManagedDisplaySpacesFn = @convention(c) (Int32) -> Unmanaged<CFArray>?
+    private static let fnCopyManagedDisplaySpaces: CopyManagedDisplaySpacesFn? = symbol("SLSCopyManagedDisplaySpaces", objHandle: objSkyLight)
+
+    /// Space type the window server uses for full-screen app Spaces.
+    private static let intFullScreenSpaceType = 4
+
+    /// Human labels for every Space, numbered like Mission Control and the
+    /// "Switch to Desktop N" shortcuts: regular desktops count up across all
+    /// displays in order; full-screen app Spaces are labeled "Full Screen".
+    /// - Returns: Label per Space ID (empty if the API is unavailable).
+    static func desktopLabels() -> [UInt64: String] {
+        guard let fnMainConnection, let fnCopyManagedDisplaySpaces,
+              let arrDictDisplays = fnCopyManagedDisplaySpaces(fnMainConnection())?.takeRetainedValue() as? [[String: Any]] else {
+            return [:]
+        }
+
+        var dictStrLabels: [UInt64: String] = [:]
+        var intDesktopNumber = 0
+        for dictDisplay in arrDictDisplays {
+            for dictSpace in dictDisplay["Spaces"] as? [[String: Any]] ?? [] {
+                guard let intSpaceId = ((dictSpace["id64"] ?? dictSpace["ManagedSpaceID"]) as? NSNumber)?.uint64Value else { continue }
+                if (dictSpace["type"] as? Int) == intFullScreenSpaceType {
+                    dictStrLabels[intSpaceId] = "Full Screen"
+                } else {
+                    intDesktopNumber += 1
+                    dictStrLabels[intSpaceId] = "Desktop \(intDesktopNumber)"
+                }
+            }
+        }
+        return dictStrLabels
+    }
+
     /// ID of the Space currently shown on the active display.
     /// - Returns: Space ID, or `nil` if the API is unavailable.
     static func activeSpace() -> UInt64? {

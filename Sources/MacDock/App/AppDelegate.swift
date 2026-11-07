@@ -59,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for objItem in objAppTracker.arrObjItems {
                 guard let objApp = objItem.objRunningApp else { continue }
                 let arrStrTitles = objWindowService.windows(for: objApp).map {
-                    $0.strTitle + ($0.blnIsOnOtherSpace ? " [other desktop]" : "") + ($0.blnIsMinimized ? " [minimized]" : "")
+                    $0.strTitle + " [\($0.strDesktopLabel ?? "-")]" + ($0.blnIsOnOtherSpace ? " [other desktop]" : "") + ($0.blnIsMinimized ? " [minimized]" : "")
                 }
                 objLogger.notice("\(objItem.strName, privacy: .public): \(arrStrTitles, privacy: .public)")
             }

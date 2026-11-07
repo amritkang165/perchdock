@@ -203,6 +203,12 @@ private struct WindowCardView: View {
             ZStack(alignment: .topTrailing) {
                 thumbnail
                     .frame(width: WindowPickerLayout.fltThumbWidth, height: WindowPickerLayout.fltThumbHeight)
+                    .overlay(alignment: .topLeading) {
+                        if let strDesktopLabel = objWindow.strDesktopLabel {
+                            desktopBadge(strDesktopLabel)
+                                .padding(WindowPickerLayout.fltCloseInset)
+                        }
+                    }
 
                 // Only windows we have an AX handle for can be closed.
                 if blnIsHovered && objWindow.objElement != nil {
@@ -213,7 +219,8 @@ private struct WindowCardView: View {
             }
 
             HStack(spacing: 4) {
-                if objWindow.blnIsOnOtherSpace {
+                // The desktop badge already says where it is; fall back to an icon without one.
+                if objWindow.blnIsOnOtherSpace && objWindow.strDesktopLabel == nil {
                     Image(systemName: "rectangle.on.rectangle")
                 }
                 if objWindow.blnIsMinimized {
@@ -264,6 +271,26 @@ private struct WindowCardView: View {
                     }
                 }
         }
+    }
+
+    /// Capsule naming the window's desktop; accent-filled for the desktop you're on.
+    /// - Parameter strLabel: e.g. "Desktop 2".
+    /// - Returns: The badge view.
+    private func desktopBadge(_ strLabel: String) -> some View {
+        let blnIsCurrent = !objWindow.blnIsOnOtherSpace
+        return Text(strLabel)
+            .font(.system(size: 9.5, weight: .semibold))
+            .foregroundStyle(blnIsCurrent ? Color.white : Color.primary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background {
+                if blnIsCurrent {
+                    Capsule().fill(Color.accentColor)
+                } else {
+                    Capsule().fill(.regularMaterial)
+                }
+            }
+            .shadow(color: .black.opacity(0.2), radius: 1.5, y: 0.5)
     }
 
     /// Small round close button, red while hovered.
