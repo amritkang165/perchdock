@@ -8,12 +8,19 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "15.0"
+packages:
+  # Auto-updates. Inactive until SUFeedURL below is set.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.6.0
 targets:
   MacDock:
     type: application
     platform: macOS
     sources:
       - path: Sources/MacDock
+    dependencies:
+      - package: Sparkle
     info:
       path: Sources/MacDock/Resources/Info.plist
       properties:
@@ -23,17 +30,26 @@ targets:
         LSMinimumSystemVersion: "15.0"
         # Agent app: no icon in the native Dock and no menu bar of its own.
         LSUIElement: true
+        NSAppleEventsUsageDescription: MacDock asks Finder to empty the Trash.
+        # Sparkle: set both (see scripts/release.sh) to turn on "Check for Updates".
+        SUFeedURL: ""
+        SUPublicEDKey: ""
     entitlements:
       path: Sources/MacDock/Resources/MacDock.entitlements
       properties:
         # Accessibility APIs are unavailable inside the App Sandbox.
         com.apple.security.app-sandbox: false
+        # Hardened runtime blocks Apple Events (Finder "empty trash") without this.
+        com.apple.security.automation.apple-events: true
+        # A self-signed identity has no Team ID, so library validation would
+        # reject the embedded Sparkle framework. Remove with a Developer ID.
+        com.apple.security.cs.disable-library-validation: true
     settings:
       base:
         PRODUCT_NAME: MacDock
         PRODUCT_BUNDLE_IDENTIFIER: com.slynck.macdock
-        MARKETING_VERSION: 0.1.0
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.2.0
+        CURRENT_PROJECT_VERSION: 2
         ENABLE_HARDENED_RUNTIME: YES
         # Stable local identity (scripts/setup-signing.sh) so macOS keeps the
         # Accessibility grant across rebuilds. Switch to Developer ID to share.

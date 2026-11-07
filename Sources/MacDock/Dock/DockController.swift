@@ -32,7 +32,11 @@ final class DockController {
     private let objPicker: WindowPickerController
     private let objDragIcon = DragIconController()
     private let objHoverLabel = HoverLabelController()
+    private let objGrid = GridPopoverController()
     private let objMouseMonitor = MouseMonitor()
+
+    /// Opens MacDock's Settings window (provided by the app delegate).
+    var onOpenSettings: (() -> Void)?
 
     // Display the dock is on (`nil` = main display).
     private var intScreenId: CGDirectDisplayID?
@@ -144,6 +148,12 @@ final class DockController {
         objPicker.onMiddleClickWindow = { [weak self] objWindow, objEvent in
             self?.handlePickerMiddleClick(objWindow, objEvent: objEvent)
         }
+        objPicker.onRightClickWindow = { [weak self] objWindow, objEvent in
+            self?.handlePickerRightClick(objWindow, objEvent: objEvent)
+        }
+        objGrid.onHide = { [weak self] in
+            self?.updateAutoHide()
+        }
 
         objTracker.onItemsChanged = { [weak self] in
             self?.layoutPanel(blnAnimated: true)
@@ -167,6 +177,9 @@ final class DockController {
             _ = objSettings.enmPosition
             _ = objSettings.blnAutoHide
             _ = objSettings.enmDisplayMode
+            _ = objSettings.blnCompact
+            _ = objSettings.blnShowTrash
+            _ = objSettings.blnShowMinimized
         } onChange: { [weak self] in
             // onChange fires before the new value is stored; apply on the next turn.
             Task { @MainActor [weak self] in
@@ -174,6 +187,8 @@ final class DockController {
                 if self.objSettings.enmDisplayMode == .main {
                     self.intScreenId = nil
                 }
+                // Trash / minimized tiles come and go with their toggles.
+                self.objTracker.rebuild()
                 self.blnShown = !self.objSettings.blnAutoHide || self.blnMouseOverDock
                 self.layoutPanel(blnAnimated: true)
                 self.observeSettings()
@@ -230,6 +245,7 @@ final class DockController {
         objState.intHoveredIndex = nil
         objState.fltMouseMain = nil
         hidePicker()
+        objGrid.hide()
         objPicker.enmPosition = objSettings.enmPosition
 
         let objFrame = objGeometry.panelFrame(in: objScreen.frame, blnShown: blnShown)
@@ -302,9 +318,9 @@ final class DockController {
     /// Shows the hovered app's name, or hides the label when previews, a drag or
     /// nothing is hovered.
     private func updateHoverLabel() {
-        guard objSettings.blnShowLabels, blnShown, !objPicker.blnIsVisible, objState.objDrag == nil,
+        guard objSettings.blnShowLabels, blnShown, !objPicker.blnIsVisible, !objGrid.blnIsVisible, objState.objDrag == nil,
               let intIndex = objState.intHoveredIndex,
-              let objItem = objTracker.arrObjItems[safe: intIndex] else {
+              let objItem = objTracker.arrObjItems[safe: intIndex], !objItem.blnIsDivider else {
             objHoverLabel.hide()
             return
         }
@@ -391,7 +407,7 @@ final class DockController {
             return
         }
 
-        let blnInUse = blnMouseOverDock || objPicker.blnMouseInside || blnMenuOpen || objState.objDrag != nil
+        let blnInUse = blnMouseOverDock || objPicker.blnMouseInside || objGrid.blnIsVisible || blnMenuOpen || objState.objDrag != nil
         if blnInUse || !blnShown {
             objAutoHideTask?.cancel()
             objAutoHideTask = nil
@@ -404,7 +420,8 @@ final class DockController {
             try? await Task.sleep(for: .seconds(self.objSettings.fltHideDelay))
             guard !Task.isCancelled else { return }
             self.objAutoHideTask = nil
-            let blnStillIdle = !self.blnMouseOverDock && !self.objPicker.blnMouseInside && !self.blnMenuOpen && self.objState.objDrag == nil
+            let blnStillIdle = !self.blnMouseOverDock && !self.objPicker.blnMouseInside && !self.objGrid.blnIsVisible
+                && !self.blnMenuOpen && self.objState.objDrag == nil
             if blnStillIdle {
                 self.setShown(false)
             }
@@ -485,7 +502,8 @@ final class DockController {
     /// Starts or updates a drag-reorder once the press has moved far enough.
     /// - Parameter objPoint: Panel-local point (may be outside the panel).
     private func handleMouseDragged(_ objPoint: CGPoint) {
-        guard let objPressPoint, let intPressIndex else { return }
+        guard let objPressPoint, let intPressIndex,
+              let objDragged = objTracker.arrObjItems[safe: intPressIndex], objDragged.blnIsMovable else { return }
         let objGeometry = self.objGeometry
         let (fltMain, fltCross) = objGeometry.mainCross(fromPanelPoint: objPoint)
         let objScreenPoint = NSEvent.mouseLocation
@@ -495,23 +513,75 @@ final class DockController {
 
             // Begin: hide hover UI and lift the icon into the floating drag panel.
             hidePicker()
+            objGrid.hide()
             objState.fltMouseMain = nil
             objState.objDrag = DockDrag(intIndex: intPressIndex, intTargetSlot: intPressIndex, blnOutside: false)
             objHoverLabel.hide()
             objDragIcon.begin(
-                objIcon: objTracker.arrObjItems[intPressIndex].objIcon,
+                objIcon: objDragged.blnIsDivider ? DividerDragIcon.image : objDragged.objIcon,
                 fltSize: objGeometry.fltIconSize,
                 objScreenPoint: objScreenPoint
             )
         }
+        guard let objDrag = objState.objDrag else { return }
 
         // Only pinned items can be removed by dragging them off.
-        let blnPinned = objTracker.arrObjItems[safe: intPressIndex]?.blnIsPinned ?? false
-        let blnOutside = blnPinned && (fltCross > objGeometry.fltBarThickness + Self.fltRemoveDistance || fltCross < -Self.fltRemoveDistance)
+        let blnOutside = objDragged.blnIsPinned
+            && (fltCross > objGeometry.fltBarThickness + Self.fltRemoveDistance || fltCross < -Self.fltRemoveDistance)
 
-        objState.objDrag?.intTargetSlot = objGeometry.dropSlot(atMain: fltMain)
+        // Hovering a group (with an app) or the Trash (with anything pinned) targets
+        // it; the layout freezes meanwhile so the target doesn't slide away.
+        let intDropTarget = blnOutside ? nil : dropTarget(forDragged: objDragged, objDrag: objDrag, fltMain: fltMain, fltCross: fltCross)
+        objState.objDrag?.intDropTarget = intDropTarget
+        if intDropTarget == nil {
+            objState.objDrag?.intTargetSlot = allowedSlot(for: objDragged, intIndex: intPressIndex,
+                                                         intSlot: objGeometry.dropSlot(atMain: fltMain, intDragIndex: intPressIndex))
+        }
         objState.objDrag?.blnOutside = blnOutside
         objDragIcon.move(to: objScreenPoint, blnRemoving: blnOutside)
+    }
+
+    /// Item under the cursor that would accept the dragged item, if any.
+    /// - Parameters:
+    ///   - objDragged: Item being dragged.
+    ///   - objDrag: Current drag (for the current layout).
+    ///   - fltMain: Cursor main coordinate.
+    ///   - fltCross: Cursor cross coordinate.
+    /// - Returns: Index of a group or the Trash, or `nil`.
+    private func dropTarget(forDragged objDragged: DockItem, objDrag: DockDrag, fltMain: CGFloat, fltCross: CGFloat) -> Int? {
+        let objGeometry = self.objGeometry
+        guard fltCross >= -10, fltCross <= objGeometry.fltBarThickness + 10 else { return nil }
+        let objLayout = objGeometry.layout(dragging: objDrag)
+        // The middle of an icon targets it; its edges still reorder.
+        let fltRadius = objGeometry.fltIconSize * 0.3
+
+        for (intIndex, objItem) in objTracker.arrObjItems.enumerated() where intIndex != objDrag.intIndex {
+            guard let fltCenter = objLayout.arrFltCenters[safe: intIndex], abs(fltMain - fltCenter) <= fltRadius else { continue }
+            switch objItem.enmKind {
+            case .group where objDragged.blnIsApp:
+                return intIndex
+            case .trash where objDragged.blnIsPinned:
+                return intIndex
+            default:
+                return nil
+            }
+        }
+        return nil
+    }
+
+    /// Clamps a drop slot to where the item may go: pinned items stay in the pinned
+    /// section; a running app can join it (becoming pinned) or stay where it is.
+    /// - Parameters:
+    ///   - objDragged: Item being dragged.
+    ///   - intIndex: Its current index.
+    ///   - intSlot: Raw drop slot.
+    /// - Returns: Allowed slot.
+    private func allowedSlot(for objDragged: DockItem, intIndex: Int, intSlot: Int) -> Int {
+        let intPinnedCount = objTracker.arrObjItems.filter(\.blnIsPinned).count
+        if objDragged.blnIsPinned {
+            return min(intSlot, max(intPinnedCount - 1, 0))
+        }
+        return intSlot <= intPinnedCount ? intSlot : intIndex
     }
 
     /// Finishes a drag, or performs the click action.
@@ -547,10 +617,25 @@ final class DockController {
             return
         }
 
+        // Dropped onto a group (joins it) or the Trash (leaves the dock).
+        if let intTarget = objDrag.intDropTarget, let objTarget = objTracker.arrObjItems[safe: intTarget] {
+            objDragIcon.vanish()
+            objState.objDrag = nil
+            switch objTarget.enmKind {
+            case .group(let strGroupId, _):
+                objTracker.add(objItem.strBundleId, toGroup: strGroupId)
+            case .trash:
+                objTracker.unpin(objItem.strBundleId)
+            default:
+                break
+            }
+            return
+        }
+
         // Land the floating icon on its slot, then commit the new order.
         let objGeometry = self.objGeometry
         let objTarget = screenPoint(
-            main: objGeometry.baseCenter(objDrag.intTargetSlot),
+            main: objGeometry.layout(dragging: objDrag).arrFltCenters[safe: objDrag.intIndex] ?? objGeometry.baseCenter(objDrag.intTargetSlot),
             cross: objGeometry.iconCross(forSize: objGeometry.fltIconSize)
         )
         objDragIcon.land(at: objTarget)
@@ -560,11 +645,33 @@ final class DockController {
         }
     }
 
-    /// Performs the click action for an icon.
+    /// Performs the click action for an item, by kind.
     /// - Parameter intIndex: Clicked item.
     private func handleClick(onIndex intIndex: Int) {
         guard let objItem = objTracker.arrObjItems[safe: intIndex] else { return }
         objShowPickerTask?.cancel()
+
+        switch objItem.enmKind {
+        case .app:
+            objGrid.hide()
+            handleAppClick(objItem)
+        case .divider:
+            break
+        case .group, .folder:
+            hidePicker()
+            toggleGrid(forIndex: intIndex)
+        case .trash:
+            objGrid.hide()
+            StackService.openTrash()
+        case .minimized(let objWindow, let objApp):
+            objGrid.hide()
+            objWindowService.raise(objWindow, of: objApp)
+        }
+    }
+
+    /// Click on an app (in the bar or inside a group).
+    /// - Parameter objItem: The app's item.
+    private func handleAppClick(_ objItem: DockItem) {
         let objAppUrl = objItem.objAppUrl ?? objItem.objRunningApp?.bundleURL
 
         // Not running: launch it (bouncing until it's up).
@@ -693,7 +800,7 @@ final class DockController {
     private func handleScroll(at objPoint: CGPoint, objEvent: NSEvent) {
         let (fltMain, _) = objGeometry.mainCross(fromPanelPoint: objPoint)
         guard let intIndex = objGeometry.slotIndex(atMain: fltMain),
-              let objItem = objTracker.arrObjItems[safe: intIndex], objItem.blnIsRunning else { return }
+              let objItem = objTracker.arrObjItems[safe: intIndex], objItem.blnIsApp, objItem.blnIsRunning else { return }
 
         // Vertical wheel or either trackpad axis; down/right = next window.
         let fltDelta = abs(objEvent.scrollingDeltaY) >= abs(objEvent.scrollingDeltaX) ? -objEvent.scrollingDeltaY : objEvent.scrollingDeltaX
@@ -721,16 +828,24 @@ final class DockController {
     /// - Parameters:
     ///   - arrObjUrls: Dragged files.
     ///   - objPoint: Panel-local point.
-    /// - Returns: `.copy` to pin apps or open files with the app under the cursor; `[]` otherwise.
+    /// - Returns: The operation the drop would perform, or `[]`.
     private func fileDragOperation(_ arrObjUrls: [URL], at objPoint: CGPoint) -> NSDragOperation {
-        if arrObjUrls.contains(where: isApplication) {
-            return .copy
-        }
         let (fltMain, _) = objGeometry.mainCross(fromPanelPoint: objPoint)
-        return objGeometry.slotIndex(atMain: fltMain) != nil ? .copy : []
+        let objItem = objGeometry.slotIndex(atMain: fltMain).flatMap { objTracker.arrObjItems[safe: $0] }
+
+        switch objItem?.enmKind {
+        case .trash?: return .delete
+        case .folder?: return .move
+        case .app? where !arrObjUrls.contains(where: isApplication): return .copy
+        default:
+            // Apps get pinned, folders become stacks.
+            return arrObjUrls.contains(where: isApplication) || arrObjUrls.contains(where: isFolder) ? .copy : []
+        }
     }
 
-    /// Pins dropped apps at the drop slot, or opens dropped files with the app under the cursor.
+    /// Handles files dropped on the dock: onto the Trash (trash them), a stack (move
+    /// them in), an app (open them with it), or between items (pin apps, add
+    /// folders as stacks).
     /// - Parameters:
     ///   - arrObjUrls: Dropped files.
     ///   - objPoint: Panel-local point.
@@ -738,23 +853,45 @@ final class DockController {
     private func handleFileDrop(_ arrObjUrls: [URL], at objPoint: CGPoint) -> Bool {
         let objGeometry = self.objGeometry
         let (fltMain, _) = objGeometry.mainCross(fromPanelPoint: objPoint)
+        let objItem = objGeometry.slotIndex(atMain: fltMain).flatMap { objTracker.arrObjItems[safe: $0] }
 
-        let arrStrAppIds = arrObjUrls.filter(isApplication).compactMap { Bundle(url: $0)?.bundleIdentifier }
-        if !arrStrAppIds.isEmpty {
-            let intPinnedCount = objTracker.arrObjItems.filter(\.blnIsPinned).count
-            var intSlot = min(objGeometry.dropSlot(atMain: fltMain), intPinnedCount)
-            for strId in arrStrAppIds {
-                objTracker.pin(strId, at: intSlot)
-                intSlot += 1
-            }
+        switch objItem?.enmKind {
+        case .trash?:
+            return StackService.trash(arrObjUrls)
+        case .folder(let objFolder)?:
+            return StackService.move(arrObjUrls, into: objFolder)
+        case .app? where !arrObjUrls.contains(where: isApplication):
+            guard let objAppUrl = objItem?.objAppUrl else { return false }
+            NSWorkspace.shared.open(arrObjUrls, withApplicationAt: objAppUrl, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
             return true
+        default:
+            break
         }
 
-        guard let intIndex = objGeometry.slotIndex(atMain: fltMain),
-              let objAppUrl = objTracker.arrObjItems[safe: intIndex]?.objAppUrl else { return false }
-        let objConfig = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.open(arrObjUrls, withApplicationAt: objAppUrl, configuration: objConfig, completionHandler: nil)
-        return true
+        // Between items: pin apps and add folders as stacks, in drop order.
+        let intPinnedCount = objTracker.arrObjItems.filter(\.blnIsPinned).count
+        var intSlot = min(objGeometry.dropSlot(atMain: fltMain, intDragIndex: -1), intPinnedCount)
+        var blnDidAnything = false
+        for objUrl in arrObjUrls {
+            if isApplication(objUrl), let strId = Bundle(url: objUrl)?.bundleIdentifier {
+                objTracker.pin(strId, at: intSlot)
+            } else if isFolder(objUrl) {
+                objTracker.addFolder(objUrl, at: intSlot)
+            } else {
+                continue
+            }
+            intSlot += 1
+            blnDidAnything = true
+        }
+        return blnDidAnything
+    }
+
+    /// Whether a URL is a plain folder (not a package like an app).
+    /// - Parameter objUrl: File URL.
+    /// - Returns: `true` for folders.
+    private func isFolder(_ objUrl: URL) -> Bool {
+        let objValues = try? objUrl.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        return objValues?.isDirectory == true && objValues?.isPackage != true
     }
 
     /// Whether a URL is an application bundle.
@@ -772,13 +909,14 @@ final class DockController {
     ///   - objEvent: The triggering event (positions the menu).
     private func showContextMenu(at objPoint: CGPoint, objEvent: NSEvent) {
         let (fltMain, _) = objGeometry.mainCross(fromPanelPoint: objPoint)
-        guard let intIndex = objGeometry.slotIndex(atMain: fltMain),
-              let objItem = objTracker.arrObjItems[safe: intIndex] else { return }
+        let intIndex = objGeometry.slotIndex(atMain: fltMain)
 
         hidePicker()
+        objGrid.hide()
         objShowPickerTask?.cancel()
 
-        let objMenu = buildMenu(for: objItem)
+        let objMenu = intIndex.flatMap { objTracker.arrObjItems[safe: $0] }.map { buildMenu(for: $0) } ?? NSMenu()
+        addDockItems(to: objMenu, afterIndex: intIndex)
         blnMenuOpen = true
         objHoverLabel.hide()
         updateAutoHide()
@@ -789,10 +927,150 @@ final class DockController {
         updateAutoHide()
     }
 
-    /// Builds the context menu for a dock item.
+    /// Adds the items every dock menu ends with: Add Divider, Add Folder, Settings.
+    /// - Parameters:
+    ///   - objMenu: Menu to extend.
+    ///   - intIndex: Item that was right-clicked (new things go after it if it's pinned).
+    private func addDockItems(to objMenu: NSMenu, afterIndex intIndex: Int?) {
+        let intPinnedCount = objTracker.arrObjItems.filter(\.blnIsPinned).count
+        // After a pinned item; otherwise at the end of the pinned section.
+        let intInsert = intIndex.map { $0 < intPinnedCount ? $0 + 1 : intPinnedCount } ?? intPinnedCount
+
+        if !objMenu.items.isEmpty { objMenu.addItem(.separator()) }
+        objMenu.addItem(ClosureMenuItem("Add Divider Here") { [weak self] in
+            self?.objTracker.addDivider(at: intInsert)
+        })
+        objMenu.addItem(ClosureMenuItem("Add Folder to Dock…") { [weak self] in
+            self?.chooseFolder(at: intInsert)
+        })
+        objMenu.addItem(.separator())
+        objMenu.addItem(ClosureMenuItem("Dock Settings…") { [weak self] in
+            self?.onOpenSettings?()
+        })
+    }
+
+    /// Asks for a folder and adds it as a stack.
+    /// - Parameter intIndex: Position among pinned items.
+    private func chooseFolder(at intIndex: Int) {
+        NSApp.activate()
+        let objPanel = NSOpenPanel()
+        objPanel.canChooseDirectories = true
+        objPanel.canChooseFiles = false
+        objPanel.allowsMultipleSelection = false
+        objPanel.prompt = "Add to Dock"
+        guard objPanel.runModal() == .OK, let objUrl = objPanel.url else { return }
+        objTracker.addFolder(objUrl, at: intIndex)
+    }
+
+    /// Builds the context menu for a dock item, by kind.
     /// - Parameter objItem: The item.
     /// - Returns: A populated menu.
     private func buildMenu(for objItem: DockItem) -> NSMenu {
+        switch objItem.enmKind {
+        case .app:
+            return buildAppMenu(for: objItem)
+
+        case .divider(let blnIsAuto):
+            let objMenu = NSMenu()
+            if !blnIsAuto {
+                objMenu.addItem(ClosureMenuItem("Remove Divider") { [weak self] in
+                    self?.objTracker.unpin(objItem.strBundleId)
+                })
+            }
+            return objMenu
+
+        case .group(let strGroupId, let arrObjMembers):
+            let objMenu = NSMenu()
+            objMenu.addItem(NSMenuItem.sectionHeader(title: objItem.strName))
+            for objMember in arrObjMembers {
+                let objEntry = ClosureMenuItem(objMember.strName) { [weak self] in
+                    self?.handleAppClick(objMember)
+                }
+                objEntry.image = Self.menuIcon(objMember.objIcon)
+                objMenu.addItem(objEntry)
+            }
+            objMenu.addItem(.separator())
+            objMenu.addItem(ClosureMenuItem("Rename Group…") { [weak self] in
+                self?.renameGroup(strGroupId, strCurrent: objItem.strName)
+            })
+            objMenu.addItem(ClosureMenuItem("Ungroup") { [weak self] in
+                self?.objTracker.ungroup(strGroupId)
+            })
+            objMenu.addItem(ClosureMenuItem("Remove Group from Dock") { [weak self] in
+                self?.objTracker.unpin(objItem.strBundleId)
+            })
+            return objMenu
+
+        case .folder(let objFolder):
+            let objMenu = NSMenu()
+            objMenu.addItem(ClosureMenuItem("Open “\(objItem.strName)”") {
+                NSWorkspace.shared.open(objFolder)
+            })
+            objMenu.addItem(.separator())
+            objMenu.addItem(ClosureMenuItem("Remove from Dock") { [weak self] in
+                self?.objTracker.unpin(objItem.strBundleId)
+            })
+            return objMenu
+
+        case .trash(let blnIsFull):
+            let objMenu = NSMenu()
+            objMenu.addItem(ClosureMenuItem("Open") {
+                StackService.openTrash()
+            })
+            let objEmpty = ClosureMenuItem("Empty Trash") {
+                StackService.emptyTrash()
+            }
+            // Unknown without Full Disk Access, so only disable when we know it's empty.
+            objEmpty.isEnabled = blnIsFull || !FileManager.default.isReadableFile(atPath: StackService.objTrashUrl.path)
+            objMenu.addItem(objEmpty)
+            return objMenu
+
+        case .minimized(let objWindow, let objApp):
+            let objMenu = NSMenu()
+            objMenu.addItem(ClosureMenuItem("Restore") { [weak self] in
+                self?.objWindowService.raise(objWindow, of: objApp)
+            })
+            objMenu.addItem(ClosureMenuItem("Close Window") { [weak self] in
+                self?.objWindowService.close(objWindow)
+            })
+            return objMenu
+        }
+    }
+
+    /// Small icon for menu items.
+    /// - Parameter objIcon: Full-size icon.
+    /// - Returns: A 16-pt copy.
+    private static func menuIcon(_ objIcon: NSImage) -> NSImage {
+        let objCopy = objIcon.copy() as? NSImage ?? objIcon
+        objCopy.size = NSSize(width: 16, height: 16)
+        return objCopy
+    }
+
+    /// Asks for a new group name.
+    /// - Parameters:
+    ///   - strGroupId: Group.
+    ///   - strCurrent: Current name (prefilled).
+    private func renameGroup(_ strGroupId: String, strCurrent: String) {
+        NSApp.activate()
+        let objAlert = NSAlert()
+        objAlert.messageText = "Rename Group"
+        objAlert.addButton(withTitle: "Rename")
+        objAlert.addButton(withTitle: "Cancel")
+        let objField = NSTextField(string: strCurrent)
+        objField.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
+        objAlert.accessoryView = objField
+        objAlert.window.initialFirstResponder = objField
+        guard objAlert.runModal() == .alertFirstButtonReturn else { return }
+        let strName = objField.stringValue.trimmingCharacters(in: .whitespaces)
+        if !strName.isEmpty {
+            objTracker.renameGroup(strGroupId, to: strName)
+        }
+    }
+
+    /// Builds the context menu for an app.
+    /// - Parameter objItem: The app's item.
+    /// - Returns: A populated menu.
+    private func buildAppMenu(for objItem: DockItem) -> NSMenu {
         let objMenu = NSMenu()
         let objApp = objItem.objRunningApp.flatMap { $0.isTerminated ? nil : $0 }
 
@@ -822,6 +1100,23 @@ final class DockController {
                 self.objTracker.pin(strId)
             }
         })
+
+        // Groups: start one with this app, or move it into an existing one.
+        objMenu.addItem(ClosureMenuItem("New Group with “\(objItem.strName)”") { [weak self] in
+            self?.objTracker.createGroup(with: strId)
+        })
+        let arrObjGroups = objTracker.groups()
+        if !arrObjGroups.isEmpty {
+            let objGroupsItem = NSMenuItem(title: "Add to Group", action: nil, keyEquivalent: "")
+            let objSubmenu = NSMenu()
+            for objGroup in arrObjGroups {
+                objSubmenu.addItem(ClosureMenuItem(objGroup.strName) { [weak self] in
+                    self?.objTracker.add(strId, toGroup: objGroup.strId)
+                })
+            }
+            objGroupsItem.submenu = objSubmenu
+            objMenu.addItem(objGroupsItem)
+        }
 
         if let objAppUrl = objItem.objAppUrl ?? objApp?.bundleURL {
             objMenu.addItem(ClosureMenuItem("Show in Finder") {
@@ -872,7 +1167,8 @@ final class DockController {
         objPicker.blnLivePreviews = objSettings.blnLivePreviews
         objPicker.blnReduceOnBattery = objSettings.blnReducePreviewsOnBattery
 
-        guard let objApp = objItem.objRunningApp, !objApp.isTerminated else {
+        // Only apps have window previews; an open group/stack grid takes precedence.
+        guard objItem.blnIsApp, !objGrid.blnIsVisible, let objApp = objItem.objRunningApp, !objApp.isTerminated else {
             hidePicker()
             return
         }
@@ -979,6 +1275,142 @@ final class DockController {
         blnMenuOpen = true
         objPicker.popUpMenu(objMenu, with: objEvent)
         blnMenuOpen = false
+        updateAutoHide()
+    }
+
+    /// Right-click on a card: bring it to this desktop, minimize or close it.
+    /// - Parameters:
+    ///   - objWindow: Right-clicked window.
+    ///   - objEvent: The click (positions the menu).
+    private func handlePickerRightClick(_ objWindow: WindowInfo, objEvent: NSEvent) {
+        guard let intIndex = objPicker.intAnchorIndex,
+              let objApp = objTracker.arrObjItems[safe: intIndex]?.objRunningApp else { return }
+
+        let objMenu = NSMenu()
+        if objWindow.blnIsOnOtherSpace {
+            objMenu.addItem(ClosureMenuItem("Bring to This Desktop") { [weak self] in
+                self?.bringWindowHere(objWindow, of: objApp)
+            })
+        }
+        objMenu.addItem(ClosureMenuItem(objWindow.blnIsOnOtherSpace ? "Go to \(objWindow.strDesktopLabel ?? "Desktop")" : "Show") { [weak self] in
+            self?.handlePickerSelection(objWindow)
+        })
+        objMenu.addItem(.separator())
+        if !objWindow.blnIsMinimized, !objWindow.blnIsOnOtherSpace, let objElement = objWindow.objElement {
+            objMenu.addItem(ClosureMenuItem("Minimize") { [weak self] in
+                AXUIElementSetAttributeValue(objElement, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+                self?.refreshPicker(forIndex: intIndex)
+            })
+        }
+        objMenu.addItem(ClosureMenuItem("Close Window") { [weak self] in
+            self?.handlePickerClose(objWindow)
+        })
+
+        blnMenuOpen = true
+        objPicker.popUpMenu(objMenu, with: objEvent)
+        blnMenuOpen = false
+        updateAutoHide()
+    }
+
+    /// Moves a window from another desktop onto this one and raises it: directly
+    /// when macOS allows it, otherwise by carrying it over (see `WindowMover`).
+    /// - Parameters:
+    ///   - objWindow: Window on another desktop.
+    ///   - objApp: Its app.
+    func bringWindowHere(_ objWindow: WindowInfo, of objApp: NSRunningApplication) {
+        hidePicker()
+        guard let intWindowId = objWindow.intWindowId else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let blnMoved = PrivateWindowAPI.moveToActiveSpace(intWindowId)
+                ? true
+                : await WindowMover.bringHere(objWindow, of: objApp, objWindowService: self.objWindowService)
+            guard blnMoved else { return }
+            // Now on this desktop: raise it via its fresh AX element.
+            try? await Task.sleep(for: .milliseconds(120))
+            let objHere = self.objWindowService.windows(for: objApp).first { $0.intWindowId == intWindowId }
+            self.objWindowService.raise(objHere ?? objWindow, of: objApp)
+        }
+    }
+
+    // MARK: - Group & stack grid
+
+    /// Opens (or closes, on a second click) the grid for a group or folder stack.
+    /// - Parameter intIndex: Dock item index.
+    private func toggleGrid(forIndex intIndex: Int) {
+        guard let objItem = objTracker.arrObjItems[safe: intIndex] else { return }
+        if objGrid.strAnchorId == objItem.strBundleId {
+            objGrid.hide()
+            return
+        }
+        objHoverLabel.hide()
+
+        switch objItem.enmKind {
+        case .group(let strGroupId, let arrObjMembers):
+            objGrid.onSelect = { [weak self] intTile in
+                guard let self, let objMember = arrObjMembers[safe: intTile] else { return }
+                self.objGrid.hide()
+                self.handleAppClick(objMember)
+            }
+            objGrid.onRightClick = { [weak self] intTile, objEvent in
+                guard let self, let objMember = arrObjMembers[safe: intTile] else { return }
+                let objMenu = NSMenu()
+                objMenu.addItem(ClosureMenuItem("Remove “\(objMember.strName)” from Group") { [weak self] in
+                    self?.objGrid.hide()
+                    self?.objTracker.remove(objMember.strBundleId, fromGroup: strGroupId)
+                })
+                if let objApp = objMember.objRunningApp, !objApp.isTerminated {
+                    objMenu.addItem(ClosureMenuItem("Quit \(objMember.strName)") {
+                        objApp.terminate()
+                    })
+                }
+                NSMenu.popUpContextMenu(objMenu, with: objEvent, for: self.objHostingView)
+            }
+            objGrid.onFooter = nil
+            objGrid.show(
+                strTitle: objItem.strName,
+                arrObjEntries: arrObjMembers.map { GridEntry(id: $0.strBundleId, strName: $0.strName, objIcon: $0.objIcon, blnIsRunning: $0.blnIsRunning) },
+                strFooter: nil,
+                strAnchorId: objItem.strBundleId,
+                objAnchorPoint: anchorPoint(forIndex: intIndex),
+                enmPosition: objSettings.enmPosition
+            )
+
+        case .folder(let objFolder):
+            let arrObjEntries = StackService.entries(in: objFolder)
+            objGrid.onSelect = { [weak self] intTile in
+                guard let objUrl = arrObjEntries[safe: intTile]?.objFileUrl else { return }
+                self?.objGrid.hide()
+                NSWorkspace.shared.open(objUrl)
+            }
+            objGrid.onRightClick = { [weak self] intTile, objEvent in
+                guard let self, let objUrl = arrObjEntries[safe: intTile]?.objFileUrl else { return }
+                let objMenu = NSMenu()
+                objMenu.addItem(ClosureMenuItem("Open") { NSWorkspace.shared.open(objUrl) })
+                objMenu.addItem(ClosureMenuItem("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([objUrl]) })
+                objMenu.addItem(.separator())
+                objMenu.addItem(ClosureMenuItem("Move to Trash") { [weak self] in
+                    StackService.trash([objUrl])
+                    self?.objGrid.update(arrObjEntries: StackService.entries(in: objFolder))
+                })
+                NSMenu.popUpContextMenu(objMenu, with: objEvent, for: self.objHostingView)
+            }
+            objGrid.onFooter = { [weak self] in
+                self?.objGrid.hide()
+                NSWorkspace.shared.open(objFolder)
+            }
+            objGrid.show(
+                strTitle: objItem.strName,
+                arrObjEntries: arrObjEntries,
+                strFooter: "Open in Finder",
+                strAnchorId: objItem.strBundleId,
+                objAnchorPoint: anchorPoint(forIndex: intIndex),
+                enmPosition: objSettings.enmPosition
+            )
+
+        default:
+            return
+        }
         updateAutoHide()
     }
 
@@ -1128,6 +1560,12 @@ final class DockController {
     /// - Parameter intIndex: Dock item index.
     func debugShowPicker(atIndex intIndex: Int) {
         showPicker(forIndex: intIndex, arrObjWindows: nil)
+    }
+
+    /// Debug aid: opens the grid of a group or folder stack.
+    /// - Parameter intIndex: Dock item index.
+    func debugToggleGrid(atIndex intIndex: Int) {
+        toggleGrid(forIndex: intIndex)
     }
 
     /// Debug aid: rapidly switches the picker across every running app, the

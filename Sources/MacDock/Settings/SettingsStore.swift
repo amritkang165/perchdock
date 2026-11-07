@@ -41,6 +41,95 @@ enum DockDisplayMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// Look of the running-app indicator.
+enum IndicatorStyle: String, CaseIterable, Identifiable {
+    case dot
+    case bar
+    case none
+
+    var id: String { rawValue }
+
+    /// Label for the settings picker.
+    var strTitle: String {
+        switch self {
+        case .dot: "Dot"
+        case .bar: "Bar"
+        case .none: "None"
+        }
+    }
+}
+
+/// Color wash over the dock's glass.
+enum DockTint: String, CaseIterable, Identifiable {
+    case none
+    case accent
+    case custom
+
+    var id: String { rawValue }
+
+    /// Label for the settings picker.
+    var strTitle: String {
+        switch self {
+        case .none: "None"
+        case .accent: "Accent color"
+        case .custom: "Custom"
+        }
+    }
+}
+
+/// A named group of apps shown as one dock icon.
+struct DockGroup: Codable, Equatable {
+    var strName: String
+    var arrStrMembers: [String]
+}
+
+/// Entries in the pinned list. Stored as strings so older pin lists (plain
+/// bundle IDs) keep working.
+enum PinnedToken: Equatable {
+    case app(String)
+    case divider(String)
+    case group(String)
+    case folder(String)
+
+    private static let strDividerPrefix = "divider:"
+    private static let strGroupPrefix = "group:"
+    private static let strFolderPrefix = "folder:"
+
+    /// Parses a stored token.
+    /// - Parameter strRaw: Stored string.
+    init(_ strRaw: String) {
+        if strRaw.hasPrefix(Self.strDividerPrefix) {
+            self = .divider(String(strRaw.dropFirst(Self.strDividerPrefix.count)))
+        } else if strRaw.hasPrefix(Self.strGroupPrefix) {
+            self = .group(String(strRaw.dropFirst(Self.strGroupPrefix.count)))
+        } else if strRaw.hasPrefix(Self.strFolderPrefix) {
+            self = .folder(String(strRaw.dropFirst(Self.strFolderPrefix.count)))
+        } else {
+            self = .app(strRaw)
+        }
+    }
+
+    /// The string stored in settings.
+    var strRaw: String {
+        switch self {
+        case .app(let strId): strId
+        case .divider(let strId): Self.strDividerPrefix + strId
+        case .group(let strId): Self.strGroupPrefix + strId
+        case .folder(let strPath): Self.strFolderPrefix + strPath
+        }
+    }
+
+    /// A new divider token with a unique ID.
+    static func newDivider() -> String { PinnedToken.divider(UUID().uuidString).strRaw }
+
+    /// A new group token with a unique ID.
+    /// - Returns: `(token, groupId)`.
+    static func newGroup() -> (strToken: String, strGroupId: String) {
+        let strId = UUID().uuidString
+        return (PinnedToken.group(strId).strRaw, strId)
+    }
+}
+
 /// All user preferences, persisted to UserDefaults on every change.
 /// Views bind to it directly; controllers observe it to re-layout.
 @MainActor
@@ -62,6 +151,15 @@ final class SettingsStore {
         static let strLivePreviews = "LivePreviews"
         static let strReducePreviewsOnBattery = "ReducePreviewsOnBattery"
         static let strDisplayMode = "DisplayMode"
+        static let strGroups = "Groups"
+        static let strShowTrash = "ShowTrash"
+        static let strShowMinimized = "ShowMinimizedWindows"
+        static let strTint = "Tint"
+        static let strTintHex = "TintHex"
+        static let strTintStrength = "TintStrength"
+        static let strCompact = "Compact"
+        static let strIndicatorStyle = "IndicatorStyle"
+        static let strAddedDownloads = "DidAddDownloadsStack"
     }
 
     /// Pins used on first launch.
@@ -123,6 +221,36 @@ final class SettingsStore {
     /// Which display the dock lives on.
     var enmDisplayMode: DockDisplayMode { didSet { objDefaults.set(enmDisplayMode.rawValue, forKey: Key.strDisplayMode) } }
 
+    /// App groups by ID (their tokens live in the pinned list).
+    var dictObjGroups: [String: DockGroup] {
+        didSet {
+            if let objData = try? JSONEncoder().encode(dictObjGroups) {
+                objDefaults.set(objData, forKey: Key.strGroups)
+            }
+        }
+    }
+
+    /// Whether the Trash appears at the end of the dock.
+    var blnShowTrash: Bool { didSet { objDefaults.set(blnShowTrash, forKey: Key.strShowTrash) } }
+
+    /// Whether minimized windows get their own tiles at the end of the dock.
+    var blnShowMinimized: Bool { didSet { objDefaults.set(blnShowMinimized, forKey: Key.strShowMinimized) } }
+
+    /// Color wash over the glass.
+    var enmTint: DockTint { didSet { objDefaults.set(enmTint.rawValue, forKey: Key.strTint) } }
+
+    /// Custom tint color as `#RRGGBB`.
+    var strTintHex: String { didSet { objDefaults.set(strTintHex, forKey: Key.strTintHex) } }
+
+    /// Tint strength (0 = clear glass, 1 = solid color).
+    var fltTintStrength: Double { didSet { objDefaults.set(fltTintStrength, forKey: Key.strTintStrength) } }
+
+    /// Tighter padding and spacing.
+    var blnCompact: Bool { didSet { objDefaults.set(blnCompact, forKey: Key.strCompact) } }
+
+    /// Running-app indicator look.
+    var enmIndicatorStyle: IndicatorStyle { didSet { objDefaults.set(enmIndicatorStyle.rawValue, forKey: Key.strIndicatorStyle) } }
+
     /// Whether MacDock starts at login (mirrors the system's login item state).
     private(set) var blnLaunchAtLogin: Bool
 
@@ -151,6 +279,13 @@ final class SettingsStore {
             Key.strLivePreviews: true,
             Key.strReducePreviewsOnBattery: true,
             Key.strDisplayMode: DockDisplayMode.main.rawValue,
+            Key.strShowTrash: true,
+            Key.strShowMinimized: true,
+            Key.strTint: DockTint.none.rawValue,
+            Key.strTintHex: "#3B82F6",
+            Key.strTintStrength: 0.25,
+            Key.strCompact: false,
+            Key.strIndicatorStyle: IndicatorStyle.dot.rawValue,
         ])
 
         fltIconSize = objDefaults.double(forKey: Key.strIconSize)
@@ -167,7 +302,27 @@ final class SettingsStore {
         blnLivePreviews = objDefaults.bool(forKey: Key.strLivePreviews)
         blnReducePreviewsOnBattery = objDefaults.bool(forKey: Key.strReducePreviewsOnBattery)
         enmDisplayMode = DockDisplayMode(rawValue: objDefaults.string(forKey: Key.strDisplayMode) ?? "") ?? .main
+        dictObjGroups = objDefaults.data(forKey: Key.strGroups)
+            .flatMap { try? JSONDecoder().decode([String: DockGroup].self, from: $0) } ?? [:]
+        blnShowTrash = objDefaults.bool(forKey: Key.strShowTrash)
+        blnShowMinimized = objDefaults.bool(forKey: Key.strShowMinimized)
+        enmTint = DockTint(rawValue: objDefaults.string(forKey: Key.strTint) ?? "") ?? .none
+        strTintHex = objDefaults.string(forKey: Key.strTintHex) ?? "#3B82F6"
+        fltTintStrength = objDefaults.double(forKey: Key.strTintStrength)
+        blnCompact = objDefaults.bool(forKey: Key.strCompact)
+        enmIndicatorStyle = IndicatorStyle(rawValue: objDefaults.string(forKey: Key.strIndicatorStyle) ?? "") ?? .dot
         blnLaunchAtLogin = SMAppService.mainApp.status == .enabled
+
+        // One-time: give everyone a Downloads stack (removable like any pin).
+        if !objDefaults.bool(forKey: Key.strAddedDownloads) {
+            objDefaults.set(true, forKey: Key.strAddedDownloads)
+            let strDownloads = PinnedToken.folder(NSHomeDirectory() + "/Downloads").strRaw
+            if !arrStrPinnedBundleIds.contains(strDownloads) {
+                arrStrPinnedBundleIds.append(strDownloads)
+                // Observers don't run inside init; persist explicitly.
+                objDefaults.set(arrStrPinnedBundleIds, forKey: Key.strPinned)
+            }
+        }
     }
 
     /// Registers or removes MacDock as a login item.

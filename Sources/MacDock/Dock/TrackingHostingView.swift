@@ -33,6 +33,9 @@ final class TrackingHostingView<Content: View>: NSHostingView<Content> {
     /// Files dropped: return whether they were accepted.
     var onFileDrop: (([URL], CGPoint) -> Bool)?
 
+    /// Latest left-button press, needed to start a drag session out of the view.
+    private(set) var objLastMouseDown: NSEvent?
+
     private var objTrackingArea: NSTrackingArea?
 
     /// Creates the host and stops it from resizing the panel to fit its content.
@@ -101,6 +104,7 @@ final class TrackingHostingView<Content: View>: NSHostingView<Content> {
             onRightMouseDown?(localPoint(event), event)
             return
         }
+        objLastMouseDown = event
         onMouseDown?(localPoint(event))
     }
 

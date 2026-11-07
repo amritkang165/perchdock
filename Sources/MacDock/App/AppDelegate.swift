@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let objNewWindowTracker = NewWindowTracker()
     private let objDockBadges = DockBadgeService()
     private let objNativeDock = NativeDockController()
+    private let objUpdates = UpdateController()
     private lazy var objSettingsWindow = SettingsWindowController(objSettings: objSettings, objThumbnailService: objThumbnailService)
     private var objDockController: DockController?
     private var objStatusItem: NSStatusItem?
@@ -31,6 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.applyNativeDock(blnHide)
         }
 
+        // Minimized tiles show the window's last captured preview.
+        objAppTracker.fnThumbnail = { [weak self] intWindowId in
+            self?.objThumbnailService.cachedThumbnail(for: intWindowId)
+        }
         objAppTracker.start()
         objNewWindowTracker.start()
         objDockBadges.start()
@@ -47,6 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             objBadges: objDockBadges,
             objSettings: objSettings
         )
+        objController.onOpenSettings = { [weak self] in
+            self?.openSettings()
+        }
         objController.show()
         objDockController = objController
 
@@ -92,6 +100,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         objMenu.addItem(objHideItem)
         objHideDockMenuItem = objHideItem
 
+        // Only builds published with an update feed can update themselves.
+        if objUpdates.blnIsConfigured {
+            let objUpdateItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+            objUpdateItem.target = self
+            objMenu.addItem(objUpdateItem)
+        }
+
         objMenu.addItem(.separator())
 
         let objQuitItem = NSMenuItem(title: "Quit MacDock", action: #selector(quit), keyEquivalent: "q")
@@ -105,6 +120,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Opens the Settings window.
     @objc private func openSettings() {
         objSettingsWindow.show()
+    }
+
+    /// Checks for a new version via Sparkle.
+    @objc private func checkForUpdates() {
+        objUpdates.checkForUpdates()
     }
 
     /// Flips the "hide native Dock" preference (the settings store applies it).
@@ -142,6 +162,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 try? await Task.sleep(for: .seconds(fltDelay))
                 objController.debugShowPicker(atIndex: intIndex)
+            }
+        }
+        if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--show-grid=") }),
+           let intIndex = Int(strArg.dropFirst("--show-grid=".count)) {
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                objController.debugToggleGrid(atIndex: intIndex)
+            }
+        }
+        if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--bring-here=") }),
+           let intWindowId = CGWindowID(strArg.dropFirst("--bring-here=".count)) {
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                // Find the window's app and entry among its windows.
+                for objApp in NSWorkspace.shared.runningApplications where objApp.activationPolicy == .regular {
+                    if let objWindow = objWindowService.windows(for: objApp).first(where: { $0.intWindowId == intWindowId }) {
+                        objController.bringWindowHere(objWindow, of: objApp)
+                        break
+                    }
+                }
             }
         }
         if arrStrArgs.contains("--open-settings") {

@@ -81,6 +81,33 @@ final class WindowService {
             onRaised?(intWindowId)
         }
 
+        // Raising alone doesn't follow a window to its desktop on current macOS:
+        // switch desktops first (like Control-Arrow), then raise it there.
+        if objWindow.blnIsOnOtherSpace, let intWindowId = objWindow.intWindowId,
+           let intSpace = PrivateWindowAPI.spaces(for: intWindowId)?.first {
+            Task { [weak self] in
+                guard let self else { return }
+                let blnSwitched = await WindowMover.switchDesktop(to: intSpace)
+                // Re-list so the window has a live AX handle on this desktop.
+                var setIntIgnored = Set<CGWindowID>()
+                if blnSwitched, let objHere = self.currentSpaceWindows(for: objApp, setIntSeenIds: &setIntIgnored)
+                    .first(where: { $0.intWindowId == intWindowId }) {
+                    self.raise(objHere, of: objApp)
+                } else {
+                    self.raiseDirectly(objWindow, of: objApp)
+                }
+            }
+            return
+        }
+        raiseDirectly(objWindow, of: objApp)
+    }
+
+    /// Fronts a window without switching desktops first.
+    /// - Parameters:
+    ///   - objWindow: Window to raise.
+    ///   - objApp: The app that owns it.
+    private func raiseDirectly(_ objWindow: WindowInfo, of objApp: NSRunningApplication) {
+
         if objWindow.blnIsMinimized, let objElement = objWindow.objElement {
             AXUIElementSetAttributeValue(objElement, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         }

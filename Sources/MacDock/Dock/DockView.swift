@@ -132,49 +132,41 @@ struct DockView: View {
         let objGeometry = DockGeometry(objSettings: objSettings, arrObjItems: arrObjItems)
         let objLayout = objState.objDrag.map { objGeometry.layout(dragging: $0) }
             ?? objGeometry.layout(mouseMain: objState.fltMouseMain)
-        // While dragging, slots no longer map to item indices; keep the separator fixed.
-        let fltSeparatorMain = objState.objDrag == nil
-            ? objGeometry.separatorMain(in: objLayout)
-            : objGeometry.fltBaseSeparatorMain
 
         ZStack(alignment: .topLeading) {
             barBackground(objGeometry: objGeometry, objLayout: objLayout)
-
-            if let fltSeparatorMain {
-                separator(objGeometry: objGeometry, fltMain: fltSeparatorMain)
-            }
 
             ForEach(Array(arrObjItems.enumerated()), id: \.element.id) { intIndex, objItem in
                 let fltCenter = objLayout.arrFltCenters[safe: intIndex] ?? objGeometry.baseCenter(intIndex)
                 let fltSize = objLayout.arrFltSizes[safe: intIndex] ?? objGeometry.fltIconSize
                 let blnIsDragged = objState.objDrag?.intIndex == intIndex
+                let blnIsDropTarget = objState.objDrag?.intDropTarget == intIndex
 
-                DockIconView(
-                    objIcon: objItem.objIcon,
-                    fltSize: fltSize,
-                    strBadge: objBadges.dictStrBadges[objItem.strBundleId],
-                    fltProgress: objBadges.dictFltProgress[objItem.strBundleId],
-                    blnLaunching: objState.setStrLaunching.contains(objItem.strBundleId),
-                    intAttention: objBadges.dictIntAttention[objItem.strBundleId] ?? 0,
-                    fltBounceHeight: objGeometry.fltBounceHeight,
-                    objBounceDirection: bounceDirection
-                )
-                    // The dragged icon is drawn by the floating drag panel instead.
-                    .opacity(blnIsDragged ? 0 : 1)
-                    .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.iconCross(forSize: fltSize)))
-                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                if objItem.blnIsDivider {
+                    divider(objGeometry: objGeometry, fltMain: fltCenter)
+                        .opacity(blnIsDragged ? 0 : 1)
+                        .transition(.opacity)
+                } else {
+                    DockIconView(
+                        objIcon: objItem.objIcon,
+                        fltSize: fltSize,
+                        strBadge: objBadges.dictStrBadges[objItem.strBundleId],
+                        fltProgress: objBadges.dictFltProgress[objItem.strBundleId],
+                        blnLaunching: objState.setStrLaunching.contains(objItem.strBundleId),
+                        intAttention: objBadges.dictIntAttention[objItem.strBundleId] ?? 0,
+                        fltBounceHeight: objGeometry.fltBounceHeight,
+                        objBounceDirection: bounceDirection
+                    )
+                        // A group or the Trash swells when something is dragged onto it.
+                        .scaleEffect(blnIsDropTarget ? 1.18 : 1)
+                        // The dragged icon is drawn by the floating drag panel instead.
+                        .opacity(blnIsDragged ? 0 : 1)
+                        .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.iconCross(forSize: fltSize)))
+                        .transition(.scale(scale: 0.3).combined(with: .opacity))
 
-                // Running dot; turns into a larger accent dot when the app has a window you haven't seen.
-                let blnHasNew = objItem.objRunningApp.map { objNewWindowTracker.setIntPidsWithNew.contains($0.processIdentifier) } ?? false
-                Circle()
-                    .fill(blnHasNew
-                          ? Color.accentColor
-                          : Color.primary.opacity(objTracker.strActiveBundleId == objItem.strBundleId ? 0.9 : 0.55))
-                    .frame(width: blnHasNew ? 6 : 4, height: blnHasNew ? 6 : 4)
-                    .shadow(color: blnHasNew ? Color.accentColor.opacity(0.8) : .clear, radius: 3)
-                    .opacity(objItem.blnIsRunning && !blnIsDragged ? 1 : 0)
-                    .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.fltIndicatorCross))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: blnHasNew)
+                    indicator(for: objItem, objGeometry: objGeometry, fltMain: fltCenter, fltIconSize: fltSize)
+                        .opacity(objItem.blnIsRunning && !blnIsDragged ? 1 : 0)
+                }
             }
         }
         .frame(width: objGeometry.objPanelSize.width, height: objGeometry.objPanelSize.height, alignment: .topLeading)
@@ -183,14 +175,61 @@ struct DockView: View {
         .animation(.spring(response: 0.24, dampingFraction: 0.82), value: objState.objDrag)
         .animation(.spring(response: 0.28, dampingFraction: 0.82), value: arrObjItems.map(\.id))
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.fltIconSize)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.blnCompact)
     }
 
-    /// Thin divider between pinned apps and other running apps.
+    /// Running indicator in the chosen style. Turns accent-colored (and larger)
+    /// when the app has a window you haven't looked at yet.
+    /// - Parameters:
+    ///   - objItem: Dock item.
+    ///   - objGeometry: Current geometry.
+    ///   - fltMain: Item center along the bar.
+    ///   - fltIconSize: Current (magnified) icon size.
+    /// - Returns: The positioned indicator.
+    @ViewBuilder
+    private func indicator(for objItem: DockItem, objGeometry: DockGeometry, fltMain: CGFloat, fltIconSize: CGFloat) -> some View {
+        let blnHasNew = objItem.objRunningApp.map { objNewWindowTracker.setIntPidsWithNew.contains($0.processIdentifier) } ?? false
+        let blnIsActive = objTracker.strActiveBundleId == objItem.objRunningApp?.bundleIdentifier
+        let objColor = blnHasNew ? Color.accentColor : Color.primary.opacity(blnIsActive ? 0.9 : 0.55)
+        let objPoint = objGeometry.viewPoint(main: fltMain, cross: objGeometry.fltIndicatorCross)
+
+        switch objSettings.enmIndicatorStyle {
+        case .dot:
+            Circle()
+                .fill(objColor)
+                .frame(width: blnHasNew ? 6 : 4, height: blnHasNew ? 6 : 4)
+                .shadow(color: blnHasNew ? Color.accentColor.opacity(0.8) : .clear, radius: 3)
+                .position(objPoint)
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: blnHasNew)
+        case .bar:
+            // Wider for the active app, like a tab underline.
+            let fltLength = fltIconSize * (blnIsActive || blnHasNew ? 0.5 : 0.28)
+            let objSize = objGeometry.enmPosition.blnIsVertical
+                ? CGSize(width: 3, height: fltLength)
+                : CGSize(width: fltLength, height: 3)
+            Capsule()
+                .fill(objColor)
+                .frame(width: objSize.width, height: objSize.height)
+                .shadow(color: blnHasNew ? Color.accentColor.opacity(0.8) : .clear, radius: 3)
+                .position(objPoint)
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: blnIsActive)
+        case .none:
+            // Still flag new windows, even with indicators off.
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 6, height: 6)
+                .shadow(color: Color.accentColor.opacity(0.8), radius: 3)
+                .opacity(blnHasNew ? 1 : 0)
+                .position(objPoint)
+        }
+    }
+
+    /// Divider line, centered in its (thin) slot.
     /// - Parameters:
     ///   - objGeometry: Current geometry.
-    ///   - fltMain: Separator position along the bar.
+    ///   - fltMain: Divider position along the bar.
     /// - Returns: The positioned line.
-    private func separator(objGeometry: DockGeometry, fltMain: CGFloat) -> some View {
+    private func divider(objGeometry: DockGeometry, fltMain: CGFloat) -> some View {
         let fltLength = objGeometry.fltIconSize * 0.7
         let objSize = objGeometry.enmPosition.blnIsVertical
             ? CGSize(width: fltLength, height: 1)
@@ -220,7 +259,7 @@ struct DockView: View {
 
         return Color.clear
             .frame(width: objSize.width, height: objSize.height)
-            .dockGlass(cornerRadius: objGeometry.fltCornerRadius)
+            .dockGlass(cornerRadius: objGeometry.fltCornerRadius, tint: objSettings.objDockTint)
             .position(objCenter)
     }
 }

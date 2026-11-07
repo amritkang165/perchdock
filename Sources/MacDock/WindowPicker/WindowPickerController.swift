@@ -37,6 +37,9 @@ final class WindowPickerController {
     /// Fired when the user middle-clicks a card.
     var onMiddleClickWindow: ((WindowInfo, NSEvent) -> Void)?
 
+    /// Fired when the user right-clicks a card.
+    var onRightClickWindow: ((WindowInfo, NSEvent) -> Void)?
+
     /// Whether thumbnails keep refreshing while the picker is open.
     var blnLivePreviews = true
 
@@ -68,6 +71,16 @@ final class WindowPickerController {
         }
         objHostingView.onMiddleMouseUp = { [weak self] objPoint, objEvent in
             self?.handleMiddleClick(objPoint, objEvent: objEvent)
+        }
+        objHostingView.onRightMouseDown = { [weak self] objPoint, objEvent in
+            guard let self else { return }
+            let objHit = WindowPickerLayout.hit(at: objPoint, count: self.objState.arrObjWindows.count, blnNotice: self.objState.blnNeedsPermission)
+            switch objHit {
+            case .card(let intIndex), .close(let intIndex):
+                self.onRightClickWindow?(self.objState.arrObjWindows[intIndex], objEvent)
+            default:
+                break
+            }
         }
     }
 

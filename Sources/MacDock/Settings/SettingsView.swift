@@ -61,7 +61,39 @@ private struct AppearanceTab: View {
             }
 
             Section {
+                Picker("Tint", selection: $objSettings.enmTint) {
+                    ForEach(DockTint.allCases) { enmTint in
+                        Text(enmTint.strTitle).tag(enmTint)
+                    }
+                }
+                if objSettings.enmTint == .custom {
+                    ColorPicker("Color", selection: Binding(
+                        get: { Color(strHex: objSettings.strTintHex) },
+                        set: { objSettings.strTintHex = $0.strHex }
+                    ), supportsOpacity: false)
+                }
+                LabeledSlider(strTitle: "Strength", fltValue: $objSettings.fltTintStrength, objRange: 0.05...0.9, fltStep: 0.05) {
+                    "\(Int(($0 * 100).rounded()))%"
+                }
+                .disabled(objSettings.enmTint == .none)
+                Toggle("Compact", isOn: $objSettings.blnCompact)
+                Picker("Running indicator", selection: $objSettings.enmIndicatorStyle) {
+                    ForEach(IndicatorStyle.allCases) { enmStyle in
+                        Text(enmStyle.strTitle).tag(enmStyle)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Style")
+            }
+
+            Section {
                 Toggle("Show app names on hover", isOn: $objSettings.blnShowLabels)
+                Toggle("Show minimized windows in the dock", isOn: $objSettings.blnShowMinimized)
+                Toggle("Show Trash", isOn: $objSettings.blnShowTrash)
+            } footer: {
+                Text("Right-click the dock to add dividers or folders. Right-click an app to start a group, or drag an app onto a group to add it.")
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

@@ -80,6 +80,20 @@ enum PrivateWindowAPI {
         return dictStrLabels
     }
 
+    /// Space IDs per display, in Mission Control order (the order Control-Arrow walks).
+    /// - Returns: One array per display (empty if the API is unavailable).
+    static func spaceOrder() -> [[UInt64]] {
+        guard let fnMainConnection, let fnCopyManagedDisplaySpaces,
+              let arrDictDisplays = fnCopyManagedDisplaySpaces(fnMainConnection())?.takeRetainedValue() as? [[String: Any]] else {
+            return []
+        }
+        return arrDictDisplays.map { dictDisplay in
+            (dictDisplay["Spaces"] as? [[String: Any]] ?? []).compactMap { dictSpace in
+                ((dictSpace["id64"] ?? dictSpace["ManagedSpaceID"]) as? NSNumber)?.uint64Value
+            }
+        }
+    }
+
     /// ID of the Space currently shown on the active display.
     /// - Returns: Space ID, or `nil` if the API is unavailable.
     static func activeSpace() -> UInt64? {
@@ -163,6 +177,46 @@ enum PrivateWindowAPI {
             }
         }
         return true
+    }
+
+    private typealias MoveWindowsToSpaceFn = @convention(c) (Int32, CFArray, UInt64) -> Void
+    private typealias SpaceSetCompatIdFn = @convention(c) (Int32, UInt64, Int32) -> CGError
+    private typealias SetWindowListWorkspaceFn = @convention(c) (Int32, UnsafeMutablePointer<CGWindowID>, Int32, Int32) -> CGError
+    private static let fnMoveWindowsToSpace: MoveWindowsToSpaceFn? = symbol("SLSMoveWindowsToManagedSpace", objHandle: objSkyLight)
+    private static let fnSpaceSetCompatId: SpaceSetCompatIdFn? = symbol("SLSSpaceSetCompatID", objHandle: objSkyLight)
+    private static let fnSetWindowListWorkspace: SetWindowListWorkspaceFn? = symbol("SLSSetWindowListWorkspace", objHandle: objSkyLight)
+
+    /// Temporary workspace tag used by the compat-ID move.
+    private static let intCompatWorkspaceId: Int32 = 0x6D64_6B21 // "mdk!"
+
+    /// Moves a window from another desktop onto the one you're looking at.
+    ///
+    /// Tries the direct window-server call first, then the "compat ID" route
+    /// (tag the current Space, move the window to that tag, untag), which works
+    /// on releases that restrict the direct call. Verifies the result.
+    /// - Parameter intWindowId: Window to move.
+    /// - Returns: `true` if the window now belongs to the current Space.
+    static func moveToActiveSpace(_ intWindowId: CGWindowID) -> Bool {
+        guard let fnMainConnection, let intActive = activeSpace() else { return false }
+        let intConnection = fnMainConnection()
+
+        /// Whether the window is already on the active Space.
+        func isHere() -> Bool { spaces(for: intWindowId)?.contains(intActive) ?? false }
+        if isHere() { return true }
+
+        if let fnMoveWindowsToSpace {
+            fnMoveWindowsToSpace(intConnection, [NSNumber(value: intWindowId)] as CFArray, intActive)
+            if isHere() { return true }
+        }
+
+        if let fnSpaceSetCompatId, let fnSetWindowListWorkspace {
+            var intId = intWindowId
+            _ = fnSpaceSetCompatId(intConnection, intActive, intCompatWorkspaceId)
+            _ = fnSetWindowListWorkspace(intConnection, &intId, 1, intCompatWorkspaceId)
+            _ = fnSpaceSetCompatId(intConnection, intActive, 0)
+            if isHere() { return true }
+        }
+        return false
     }
 
     /// Resolves a C symbol and casts it to a function type.
