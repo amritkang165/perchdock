@@ -613,19 +613,48 @@ final class DockController {
         objState.intGroupPending = nil
     }
 
-    /// Clamps a drop slot to where the item may go: pinned items stay in the pinned
-    /// section; a running app can join it (becoming pinned) or stay where it is.
+    /// Where drop slots fall, counted among the items other than the dragged one.
+    private struct DropSections {
+        /// Last slot in the pinned section.
+        let intPinnedEnd: Int
+        /// Running-section slots, or `nil` when the dragged item can't go there.
+        let objRunning: ClosedRange<Int>?
+    }
+
+    /// Works out the pinned and running slot ranges for a drag.
+    /// - Parameter objDragged: Item being dragged.
+    /// - Returns: Section boundaries.
+    private func dropSections(for objDragged: DockItem) -> DropSections {
+        let arrObjItems = objTracker.arrObjItems
+        let intPinnedOthers = arrObjItems.filter(\.blnIsPinned).count - (objDragged.blnIsPinned ? 1 : 0)
+        let intRunningOthers = arrObjItems.filter { $0.blnIsApp && !$0.blnIsPinned }.count - (objDragged.blnIsPinned ? 0 : 1)
+
+        // Only running apps can live in the running section (others would vanish).
+        guard objDragged.blnIsApp, objDragged.blnIsRunning, intRunningOthers > 0 || !objDragged.blnIsPinned else {
+            return DropSections(intPinnedEnd: intPinnedOthers, objRunning: nil)
+        }
+        // The automatic divider sits between the sections when both have items.
+        let intRunningStart = intPinnedOthers + (intPinnedOthers > 0 ? 1 : 0)
+        return DropSections(intPinnedEnd: intPinnedOthers, objRunning: intRunningStart...(intRunningStart + intRunningOthers))
+    }
+
+    /// Clamps a drop slot to where the item may go: the pinned section, or — for a
+    /// running app — anywhere among the running apps.
     /// - Parameters:
     ///   - objDragged: Item being dragged.
     ///   - intIndex: Its current index.
     ///   - intSlot: Raw drop slot.
     /// - Returns: Allowed slot.
     private func allowedSlot(for objDragged: DockItem, intIndex: Int, intSlot: Int) -> Int {
-        let intPinnedCount = objTracker.arrObjItems.filter(\.blnIsPinned).count
-        if objDragged.blnIsPinned {
-            return min(intSlot, max(intPinnedCount - 1, 0))
+        let objSections = dropSections(for: objDragged)
+        if intSlot <= objSections.intPinnedEnd {
+            return intSlot
         }
-        return intSlot <= intPinnedCount ? intSlot : intIndex
+        guard let objRunning = objSections.objRunning else {
+            // Can't leave the pinned section: stop at its end (or snap back if it was running).
+            return objDragged.blnIsPinned ? objSections.intPinnedEnd : intIndex
+        }
+        return min(max(intSlot, objRunning.lowerBound), objRunning.upperBound)
     }
 
     /// Finishes a drag, or performs the click action.
@@ -690,9 +719,15 @@ final class DockController {
         )
         objDragIcon.land(at: objTarget)
         objState.objDrag = nil
-        if objDrag.intTargetSlot != objDrag.intIndex {
-            objTracker.move(objItem.strBundleId, toSlot: objDrag.intTargetSlot)
+        guard objDrag.intTargetSlot != objDrag.intIndex else { return }
+
+        // Into the running section: unpin (if pinned) and keep the dropped position.
+        if let objRunning = dropSections(for: objItem).objRunning,
+           objDrag.intTargetSlot > dropSections(for: objItem).intPinnedEnd, objRunning.contains(objDrag.intTargetSlot) {
+            objTracker.placeInRunning(objItem.strBundleId, at: objDrag.intTargetSlot - objRunning.lowerBound)
+            return
         }
+        objTracker.move(objItem.strBundleId, toSlot: objDrag.intTargetSlot)
     }
 
     /// Performs the click action for an item, by kind.

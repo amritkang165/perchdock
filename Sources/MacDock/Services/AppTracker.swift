@@ -80,6 +80,8 @@ final class AppTracker {
     @ObservationIgnored private var arrObjObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var dictObjIconCache: [String: NSImage] = [:]
     @ObservationIgnored private var blnTrashWasFull: Bool?
+    /// Order the user dragged running (unpinned) apps into, for this session.
+    @ObservationIgnored private var arrStrRunningOrder: [String] = []
     @ObservationIgnored private var objTrashTask: Task<Void, Never>?
 
     /// Thumbnails for minimized tiles (last captured preview), if available.
@@ -125,6 +127,24 @@ final class AppTracker {
             pin(strToken, at: min(intSlot, arrStrVisible.count - 1))
         } else if intSlot <= arrStrVisible.count {
             pin(strToken, at: intSlot)
+        }
+    }
+
+    /// Puts an app at a position in the running section, unpinning it if needed
+    /// (it stays in the dock while it runs).
+    /// - Parameters:
+    ///   - strBundleId: App.
+    ///   - intIndex: Position among running (unpinned) apps.
+    func placeInRunning(_ strBundleId: String, at intIndex: Int) {
+        var arrStrRunning = arrObjItems.filter { $0.blnIsApp && !$0.blnIsPinned }.map(\.strBundleId)
+        arrStrRunning.removeAll { $0 == strBundleId }
+        arrStrRunning.insert(strBundleId, at: min(max(intIndex, 0), arrStrRunning.count))
+        arrStrRunningOrder = arrStrRunning
+
+        if visiblePinnedIds().contains(strBundleId) {
+            unpin(strBundleId)
+        } else {
+            rebuild()
         }
     }
 
@@ -362,6 +382,15 @@ final class AppTracker {
             guard let strId = objApp.bundleIdentifier, !setStrPinnedApps.contains(strId),
                   !arrObjRunningItems.contains(where: { $0.strBundleId == strId }) else { continue }
             arrObjRunningItems.append(makeApp(strBundleId: strId, objAppUrl: objApp.bundleURL, objRunningApp: objApp, blnIsPinned: false))
+        }
+        // Apps the user arranged keep their spot; newly launched ones follow in launch order.
+        let arrObjLaunchOrder = arrObjRunningItems
+        arrObjRunningItems.sort { objA, objB in
+            let intA = arrStrRunningOrder.firstIndex(of: objA.strBundleId) ?? Int.max
+            let intB = arrStrRunningOrder.firstIndex(of: objB.strBundleId) ?? Int.max
+            if intA != intB { return intA < intB }
+            return (arrObjLaunchOrder.firstIndex { $0.strBundleId == objA.strBundleId } ?? 0)
+                < (arrObjLaunchOrder.firstIndex { $0.strBundleId == objB.strBundleId } ?? 0)
         }
         if !arrObjRunningItems.isEmpty {
             if !arrObjNewItems.isEmpty {
