@@ -11,6 +11,8 @@ final class DockState {
     var intHoveredIndex: Int?
     /// In-progress drag, if any.
     var objDrag: DockDrag?
+    /// App being held over during a drag, before it's ready to form a group.
+    var intGroupPending: Int?
     /// Apps launched from the dock that haven't finished launching (they bounce).
     var setStrLaunching: Set<String> = []
 }
@@ -141,6 +143,15 @@ struct DockView: View {
                 let fltSize = objLayout.arrFltSizes[safe: intIndex] ?? objGeometry.fltIconSize
                 let blnIsDragged = objState.objDrag?.intIndex == intIndex
                 let blnIsDropTarget = objState.objDrag?.intDropTarget == intIndex
+                // App-onto-app: pending while the hold timer runs, armed once dropping would group them.
+                let blnGroupArmed = blnIsDropTarget && objItem.blnIsApp
+                let blnGroupPending = !blnGroupArmed && objState.intGroupPending == intIndex
+                let objIconPoint = objGeometry.viewPoint(main: fltCenter, cross: objGeometry.iconCross(forSize: fltSize))
+
+                if objItem.blnIsApp {
+                    groupPreviewTile(fltSize: fltSize, blnPending: blnGroupPending, blnArmed: blnGroupArmed)
+                        .position(objIconPoint)
+                }
 
                 if objItem.blnIsDivider {
                     divider(objGeometry: objGeometry, fltMain: fltCenter)
@@ -157,11 +168,18 @@ struct DockView: View {
                         fltBounceHeight: objGeometry.fltBounceHeight,
                         objBounceDirection: bounceDirection
                     )
-                        // A group or the Trash swells when something is dragged onto it.
-                        .scaleEffect(blnIsDropTarget ? 1.18 : 1)
+                        // A group or the Trash swells when something is dragged onto it; an app
+                        // about to be grouped shrinks into the first slot of the group tile.
+                        .scaleEffect(blnGroupArmed ? 0.42 : blnGroupPending ? 0.88 : blnIsDropTarget ? 1.18 : 1)
+                        .offset(
+                            x: blnGroupArmed ? -fltSize * 0.22 : 0,
+                            y: blnGroupArmed ? -fltSize * 0.22 : 0
+                        )
+                        .animation(.spring(response: 0.32, dampingFraction: 0.68), value: blnGroupArmed)
+                        .animation(.easeOut(duration: 0.3), value: blnGroupPending)
                         // The dragged icon is drawn by the floating drag panel instead.
                         .opacity(blnIsDragged ? 0 : 1)
-                        .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.iconCross(forSize: fltSize)))
+                        .position(objIconPoint)
                         .transition(.scale(scale: 0.3).combined(with: .opacity))
 
                     indicator(for: objItem, objGeometry: objGeometry, fltMain: fltCenter, fltIconSize: fltSize)
@@ -222,6 +240,42 @@ struct DockView: View {
                 .opacity(blnHasNew ? 1 : 0)
                 .position(objPoint)
         }
+    }
+
+    /// Frosted rounded tile that grows behind an app when another app is held over
+    /// it, previewing the group about to be made: it starts growing during the
+    /// hold, then springs to full size with a gentle pulse once a drop would group.
+    /// - Parameters:
+    ///   - fltSize: Current icon size.
+    ///   - blnPending: Hold in progress.
+    ///   - blnArmed: Dropping now creates a group.
+    /// - Returns: The tile (invisible when neither).
+    private func groupPreviewTile(fltSize: CGFloat, blnPending: Bool, blnArmed: Bool) -> some View {
+        let fltCorner = fltSize * 0.26
+        return RoundedRectangle(cornerRadius: fltCorner)
+            .fill(.ultraThinMaterial)
+            .overlay(RoundedRectangle(cornerRadius: fltCorner).fill(Color.primary.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: fltCorner).strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+            .overlay(alignment: .bottomTrailing) {
+                // An empty slot where the dragged app will go.
+                RoundedRectangle(cornerRadius: fltSize * 0.1)
+                    .strokeBorder(Color.primary.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+                    .frame(width: fltSize * 0.36, height: fltSize * 0.36)
+                    .padding(fltSize * 0.1)
+                    .opacity(blnArmed ? 1 : 0)
+            }
+            .frame(width: fltSize * 0.98, height: fltSize * 0.98)
+            .shadow(color: .black.opacity(blnArmed ? 0.25 : 0), radius: 6, y: 2)
+            .phaseAnimator([1.0, 1.04], trigger: blnArmed) { objContent, fltPulse in
+                objContent.scaleEffect(blnArmed ? fltPulse : 1)
+            } animation: { _ in
+                .easeInOut(duration: 0.18)
+            }
+            .scaleEffect(blnArmed ? 1.12 : blnPending ? 0.9 : 0.5)
+            .opacity(blnArmed ? 1 : blnPending ? 0.55 : 0)
+            .animation(.spring(response: 0.32, dampingFraction: 0.62), value: blnArmed)
+            .animation(.easeOut(duration: 0.3), value: blnPending)
+            .allowsHitTesting(false)
     }
 
     /// Divider line, centered in its (thin) slot.

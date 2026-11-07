@@ -164,6 +164,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 objController.debugShowPicker(atIndex: intIndex)
             }
         }
+        if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--preview-group=") }),
+           let intIndex = Int(strArg.dropFirst("--preview-group=".count)) {
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                objController.debugPreviewGroup(atIndex: intIndex)
+            }
+        }
         if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--show-grid=") }),
            let intIndex = Int(strArg.dropFirst("--show-grid=".count)) {
             Task {

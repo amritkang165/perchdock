@@ -596,6 +596,7 @@ final class DockController {
         cancelGroupDwell()
         objState.objDrag?.intDropTarget = nil
         intPendingGroupTarget = intCandidate
+        objState.intGroupPending = intCandidate
         objGroupDwellTask = Task { [weak self] in
             try? await Task.sleep(for: Self.objGroupDwell)
             guard !Task.isCancelled, let self, self.intPendingGroupTarget == intCandidate, self.objState.objDrag != nil else { return }
@@ -608,6 +609,7 @@ final class DockController {
         objGroupDwellTask?.cancel()
         objGroupDwellTask = nil
         intPendingGroupTarget = nil
+        objState.intGroupPending = nil
     }
 
     /// Clamps a drop slot to where the item may go: pinned items stay in the pinned
@@ -1607,6 +1609,19 @@ final class DockController {
     /// - Parameter intIndex: Dock item index.
     func debugShowPicker(atIndex intIndex: Int) {
         showPicker(forIndex: intIndex, arrObjWindows: nil)
+    }
+
+    /// Debug aid: shows the "about to make a group" state on an app, as if another
+    /// app were held over it (pending first, then armed).
+    /// - Parameter intIndex: Target app index.
+    func debugPreviewGroup(atIndex intIndex: Int) {
+        // An out-of-range drag index means no real icon is lifted.
+        objState.objDrag = DockDrag(intIndex: objTracker.arrObjItems.count, intTargetSlot: 0, blnOutside: false)
+        objState.intGroupPending = intIndex
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.objGroupDwell)
+            self?.objState.objDrag?.intDropTarget = intIndex
+        }
     }
 
     /// Debug aid: opens the grid of a group or folder stack.
