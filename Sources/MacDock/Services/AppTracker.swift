@@ -235,6 +235,19 @@ final class AppTracker {
         savePinned(arrStrVisible)
     }
 
+    /// Reorders a group's apps.
+    /// - Parameters:
+    ///   - strGroupId: Group.
+    ///   - arrStrOrder: Members as shown, in the new order. Members not shown
+    ///     (e.g. not installed right now) keep their place at the end.
+    func setGroupOrder(_ strGroupId: String, to arrStrOrder: [String]) {
+        guard var objGroup = objSettings.dictObjGroups[strGroupId] else { return }
+        let arrStrHidden = objGroup.arrStrMembers.filter { !arrStrOrder.contains($0) }
+        objGroup.arrStrMembers = arrStrOrder.filter { objGroup.arrStrMembers.contains($0) } + arrStrHidden
+        objSettings.dictObjGroups[strGroupId] = objGroup
+        rebuild()
+    }
+
     /// Renames a group.
     /// - Parameters:
     ///   - strGroupId: Group.
@@ -455,10 +468,8 @@ final class AppTracker {
     private func signature(of arrObjItems: [DockItem]) -> [String] {
         arrObjItems.map { objItem in
             var strSignature = objItem.strBundleId + (objItem.blnIsPinned ? "|p" : "") + (objItem.blnIsTrailing ? "|t" : "")
-            // Name and color changes redraw without a relayout (which would close open popovers).
-            if case .group(_, let arrObjMembers) = objItem.enmKind {
-                strSignature += "|" + arrObjMembers.map(\.strBundleId).joined(separator: ",")
-            }
+            // A group is one tile whatever its members, name or color: those redraw
+            // without a relayout (which would close an open group popover).
             if case .trash(let blnIsFull) = objItem.enmKind {
                 strSignature += blnIsFull ? "|full" : "|empty"
             }

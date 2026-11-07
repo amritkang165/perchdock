@@ -92,6 +92,20 @@ final class GridPopoverState {
     var objHovered: GridPopoverLayout.Hit?
     /// Whether clicking the title renames it (groups, not folders).
     var blnTitleEditable = false
+    /// Tile being dragged to reorder (its original index), if any.
+    var intDragFrom: Int?
+    /// Where the dragged tile would land.
+    var intDragTo: Int?
+
+    /// Tiles in display order: the dragged one shown at its landing spot.
+    var arrObjDisplayed: [GridEntry] {
+        guard let intDragFrom, let intDragTo, arrObjEntries.indices.contains(intDragFrom) else { return arrObjEntries }
+        var arrObjMoved = arrObjEntries
+        let objEntry = arrObjMoved.remove(at: intDragFrom)
+        arrObjMoved.insert(objEntry, at: min(intDragTo, arrObjMoved.count))
+        return arrObjMoved
+    }
+
     /// Whether the title is being renamed inline.
     var blnEditingTitle = false
     /// Name being typed while renaming.
@@ -128,9 +142,12 @@ struct GridPopoverView: View {
                     .foregroundStyle(.secondary)
                     .frame(height: GridPopoverLayout.fltTileHeight)
             } else {
+                // Reordering slides the other tiles out of the way of the dragged one.
+                let strDraggedId = objState.intDragFrom.flatMap { arrObjEntries[safe: $0]?.id }
                 LazyVGrid(columns: arrObjColumns, spacing: 0) {
-                    ForEach(Array(arrObjEntries.enumerated()), id: \.element.id) { intIndex, objEntry in
-                        tile(objEntry, blnHovered: objState.objHovered == .tile(intIndex))
+                    ForEach(Array(objState.arrObjDisplayed.enumerated()), id: \.element.id) { intIndex, objEntry in
+                        tile(objEntry, blnHovered: strDraggedId == nil && objState.objHovered == .tile(intIndex),
+                             blnLifted: objEntry.id == strDraggedId)
                     }
                 }
             }
@@ -198,14 +215,16 @@ struct GridPopoverView: View {
     /// - Parameters:
     ///   - objEntry: Tile data.
     ///   - blnHovered: Whether to highlight it.
+    ///   - blnLifted: Whether it's being dragged to a new spot.
     /// - Returns: The tile view.
-    private func tile(_ objEntry: GridEntry, blnHovered: Bool) -> some View {
+    private func tile(_ objEntry: GridEntry, blnHovered: Bool, blnLifted: Bool = false) -> some View {
         VStack(spacing: 4) {
             Image(nsImage: objEntry.objIcon)
                 .resizable()
                 .interpolation(.high)
                 .frame(width: GridPopoverLayout.fltIconSize, height: GridPopoverLayout.fltIconSize)
-                .scaleEffect(blnHovered ? 1.08 : 1)
+                .scaleEffect(blnLifted ? 1.15 : (blnHovered ? 1.08 : 1))
+                .shadow(color: .black.opacity(blnLifted ? 0.35 : 0), radius: 6, y: 3)
             Text(objEntry.strName)
                 .font(.system(size: 11))
                 .lineLimit(2)
@@ -218,8 +237,9 @@ struct GridPopoverView: View {
         }
         .frame(width: GridPopoverLayout.fltTileWidth, height: GridPopoverLayout.fltTileHeight)
         .background(
-            RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(blnHovered ? 0.1 : 0))
+            RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(blnHovered || blnLifted ? 0.1 : 0))
         )
+        .zIndex(blnLifted ? 1 : 0)
     }
 }
 
@@ -249,6 +269,8 @@ final class GridPopoverController: NSObject, NSDraggingSource {
     var onFooter: (() -> Void)?
     /// Popover closed.
     var onHide: (() -> Void)?
+    /// Tile dragged to a new position (from, to); set to make tiles reorderable (groups).
+    var onReorder: ((Int, Int) -> Void)?
     /// Hovered tile changed (`nil` when off the tiles), e.g. to preview an app's windows.
     var onHoverTile: ((Int?) -> Void)?
     /// Title edited inline; set to make the title clickable (groups).
@@ -348,6 +370,8 @@ final class GridPopoverController: NSObject, NSDraggingSource {
     func hide() {
         guard blnIsVisible else { return }
         strAnchorId = nil
+        objState.intDragFrom = nil
+        objState.intDragTo = nil
         // Clicking away while renaming keeps the new name, like Finder.
         endTitleEditing(blnCommit: true)
         removeMonitors()
@@ -452,6 +476,18 @@ final class GridPopoverController: NSObject, NSDraggingSource {
     /// - Parameter objPoint: Panel point.
     private func handleClick(_ objPoint: CGPoint) {
         defer { objPressPoint = nil }
+        // Released a tile being reordered: commit its new position.
+        if let intFrom = objState.intDragFrom {
+            let intTo = objState.intDragTo ?? intFrom
+            // Keep the shown order so tiles don't snap back before the owner saves it.
+            objState.arrObjEntries = objState.arrObjDisplayed
+            objState.intDragFrom = nil
+            objState.intDragTo = nil
+            if intTo != intFrom {
+                onReorder?(intFrom, intTo)
+            }
+            return
+        }
         guard !blnDragStarted else { return }
         let objHit = hit(objPoint)
         // Clicking anywhere else in the popover finishes a rename.
@@ -480,6 +516,15 @@ final class GridPopoverController: NSObject, NSDraggingSource {
 
         objState.strDraftTitle = objState.strTitle
         objState.blnEditingTitle = true
+    }
+
+    /// Debug aid: shows a reorder drag in progress (not committed).
+    /// - Parameters:
+    ///   - intFrom: Lifted tile.
+    ///   - intTo: Landing spot.
+    func debugReorder(from intFrom: Int, to intTo: Int) {
+        objState.intDragFrom = intFrom
+        objState.intDragTo = intTo
     }
 
     /// Debug aid: starts renaming as if the title were clicked.
@@ -511,6 +556,10 @@ final class GridPopoverController: NSObject, NSDraggingSource {
     /// Starts dragging a file out of a folder stack (to Finder, Mail, …).
     /// - Parameter objPoint: Panel point.
     private func handleDrag(_ objPoint: CGPoint) {
+        if onReorder != nil {
+            handleReorderDrag(objPoint)
+            return
+        }
         guard !blnDragStarted, let objPressPoint,
               hypot(objPoint.x - objPressPoint.x, objPoint.y - objPressPoint.y) > 4,
               case .tile(let intIndex)? = hit(objPressPoint),
@@ -524,6 +573,35 @@ final class GridPopoverController: NSObject, NSDraggingSource {
         objItem.setDraggingFrame(NSRect(x: objPressPoint.x - fltIcon / 2, y: objPressPoint.y - fltIcon / 2, width: fltIcon, height: fltIcon),
                                  contents: objEntry.objIcon)
         objHostingView.beginDraggingSession(with: [objItem], event: objEvent, source: self)
+    }
+
+    /// Drags a tile to a new spot within the grid (groups); the others make room.
+    /// - Parameter objPoint: Panel point.
+    private func handleReorderDrag(_ objPoint: CGPoint) {
+        guard objState.arrObjEntries.count > 1, let objPressPoint else { return }
+
+        // Lift the pressed tile once the mouse has moved a little.
+        if objState.intDragFrom == nil {
+            guard hypot(objPoint.x - objPressPoint.x, objPoint.y - objPressPoint.y) > 4,
+                  case .tile(let intIndex)? = hit(objPressPoint) else { return }
+            blnDragStarted = true
+            // No window previews while rearranging.
+            if intHoveredTile != nil {
+                objState.objHovered = nil
+                onHoverTile?(nil)
+            }
+            withAnimation(.easeOut(duration: 0.12)) {
+                objState.intDragFrom = intIndex
+                objState.intDragTo = intIndex
+            }
+            return
+        }
+
+        // Follow the cursor: the tile under it is where the dragged one goes.
+        guard case .tile(let intTarget)? = hit(objPoint), intTarget != objState.intDragTo else { return }
+        withAnimation(.spring(duration: 0.22, bounce: 0.15)) {
+            objState.intDragTo = intTarget
+        }
     }
 
     /// Files can be copied, moved or linked by the drop target.

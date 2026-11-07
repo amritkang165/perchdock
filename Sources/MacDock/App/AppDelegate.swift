@@ -182,6 +182,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                    let intTile = Int(strTile.dropFirst("--grid-preview=".count)) {
                     objController.debugPreviewGridTile(intTile)
                 }
+                if let strDrag = arrStrArgs.first(where: { $0.hasPrefix("--grid-drag=") }) {
+                    let arrInt = strDrag.dropFirst("--grid-drag=".count).split(separator: ",").compactMap { Int($0) }
+                    if arrInt.count == 2 { objController.debugReorderGrid(from: arrInt[0], to: arrInt[1]) }
+                }
                 if arrStrArgs.contains("--grid-rename") {
                     objController.debugEditGridTitle()
                 }

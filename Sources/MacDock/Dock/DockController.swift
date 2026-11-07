@@ -1516,10 +1516,12 @@ final class DockController {
     // MARK: - Group & stack grid
 
     /// Opens (or closes, on a second click) the grid for a group or folder stack.
-    /// - Parameter intIndex: Dock item index.
-    private func toggleGrid(forIndex intIndex: Int) {
+    /// - Parameters:
+    ///   - intIndex: Dock item index.
+    ///   - blnRefresh: Re-fill an open popover in place instead of toggling it.
+    private func toggleGrid(forIndex intIndex: Int, blnRefresh: Bool = false) {
         guard let objItem = objTracker.arrObjItems[safe: intIndex] else { return }
-        if objGrid.strAnchorId == objItem.strBundleId {
+        if !blnRefresh && objGrid.strAnchorId == objItem.strBundleId {
             objGrid.hide()
             return
         }
@@ -1548,6 +1550,17 @@ final class DockController {
             }
             objGrid.onFooter = nil
             arrObjGridMembers = arrObjMembers
+            // Drag tiles to reorder the group; the popover re-fills with the saved order.
+            objGrid.onReorder = { [weak self] intFrom, intTo in
+                guard let self else { return }
+                var arrStrOrder = arrObjMembers.map(\.strBundleId)
+                let strMoved = arrStrOrder.remove(at: intFrom)
+                arrStrOrder.insert(strMoved, at: min(intTo, arrStrOrder.count))
+                self.objTracker.setGroupOrder(strGroupId, to: arrStrOrder)
+                if let intGroupIndex = self.objTracker.arrObjItems.firstIndex(where: { $0.strBundleId == objItem.strBundleId }) {
+                    self.toggleGrid(forIndex: intGroupIndex, blnRefresh: true)
+                }
+            }
             objGrid.onHoverTile = { [weak self] intTile in
                 self?.handleGridTileHover(intTile, arrObjMembers: arrObjMembers)
             }
@@ -1590,6 +1603,7 @@ final class DockController {
             }
             objGrid.onRename = nil
             objGrid.onHoverTile = nil
+            objGrid.onReorder = nil
             arrObjGridMembers = []
             objGrid.show(
                 strTitle: objItem.strName,
@@ -1951,6 +1965,14 @@ final class DockController {
     func debugPreviewGridTile(_ intTile: Int) {
         guard let objMember = arrObjGridMembers[safe: intTile] else { return }
         showGridPicker(for: objMember, intTile: intTile)
+    }
+
+    /// Debug aid: shows a reorder drag in the open group popover.
+    /// - Parameters:
+    ///   - intFrom: Lifted tile.
+    ///   - intTo: Landing spot.
+    func debugReorderGrid(from intFrom: Int, to intTo: Int) {
+        objGrid.debugReorder(from: intFrom, to: intTo)
     }
 
     /// Debug aid: starts renaming the open group popover's title.
