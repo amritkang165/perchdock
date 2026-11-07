@@ -46,6 +46,17 @@ final class DockController {
     private var objShowPickerTask: Task<Void, Never>?
     private var objHidePickerTask: Task<Void, Never>?
     private var objOutsideClickMonitor: Any?
+    /// App whose windows the picker is showing (a dock app or a group member).
+    private var objPickerApp: NSRunningApplication?
+    /// Re-opens the current picker with fresh windows.
+    private var fnPickerRefresh: (() -> Void)?
+    /// Group popover tile under the cursor.
+    private var intGridHoveredTile: Int?
+    /// Apps in the open group popover (empty for folder stacks).
+    private var arrObjGridMembers: [DockItem] = []
+    private var objLocalMiddleMonitor: Any?
+    private var objGlobalMiddleMonitor: Any?
+    private var dblLastMiddleTimestamp: TimeInterval = -1
     private var objScreenObserver: NSObjectProtocol?
 
     // Auto-hide.
@@ -152,8 +163,15 @@ final class DockController {
         objPicker.onRightClickWindow = { [weak self] objWindow, objEvent in
             self?.handlePickerRightClick(objWindow, objEvent: objEvent)
         }
+        installMiddleClickMonitors()
         objGrid.onHide = { [weak self] in
-            self?.updateAutoHide()
+            guard let self else { return }
+            self.intGridHoveredTile = nil
+            // A group member's preview goes with its popover.
+            if (self.objPicker.intAnchorIndex ?? 0) < 0 {
+                self.hidePicker()
+            }
+            self.updateAutoHide()
         }
 
         objTracker.onItemsChanged = { [weak self] in
@@ -1320,6 +1338,8 @@ final class DockController {
             return
         }
 
+        objPickerApp = objApp
+        fnPickerRefresh = { [weak self] in self?.showPicker(forIndex: intIndex, arrObjWindows: nil) }
         objPicker.show(
             strAppName: objItem.strName,
             objAppIcon: objItem.objIcon,
@@ -1357,9 +1377,12 @@ final class DockController {
     /// Raises the window chosen in the picker.
     /// - Parameter objWindow: Selected window.
     private func handlePickerSelection(_ objWindow: WindowInfo) {
-        guard let intIndex = objPicker.intAnchorIndex,
-              let objApp = objTracker.arrObjItems[safe: intIndex]?.objRunningApp else { return }
+        guard let objApp = objPickerApp else { return }
 
+        // A group member's window was chosen: the group popover is done too.
+        if (objPicker.intAnchorIndex ?? 0) < 0 {
+            objGrid.hide()
+        }
         hidePicker()
         objWindowService.raise(objWindow, of: objApp)
     }
@@ -1367,18 +1390,17 @@ final class DockController {
     /// Closes a window from the picker, then refreshes the picker (or hides it if none remain).
     /// - Parameter objWindow: Window to close.
     private func handlePickerClose(_ objWindow: WindowInfo) {
-        guard let intIndex = objPicker.intAnchorIndex else { return }
+        guard objPicker.blnIsVisible else { return }
         objWindowService.close(objWindow)
         // Give the app a moment to actually close it (or show a save sheet).
-        refreshPicker(forIndex: intIndex)
+        refreshPicker()
     }
 
     /// Middle-click on a card: closes the window, or — when it has several tabs —
     /// asks whether to close just the front tab or the whole window.
     /// - Parameter objWindow: Middle-clicked window.
     private func handlePickerMiddleClick(_ objWindow: WindowInfo) {
-        guard let intIndex = objPicker.intAnchorIndex,
-              let objApp = objTracker.arrObjItems[safe: intIndex]?.objRunningApp else { return }
+        guard let objApp = objPickerApp else { return }
 
         let arrObjTabs = objWindowService.tabs(in: objWindow)
         guard arrObjTabs.count > 1 else {
@@ -1391,7 +1413,7 @@ final class DockController {
         objMenu.addItem(ClosureMenuItem("Close Tab “\(strFrontTitle.prefix(40))”") { [weak self] in
             guard let self else { return }
             self.objWindowService.closeFrontTab(of: objWindow, in: objApp)
-            self.refreshPicker(forIndex: intIndex)
+            self.refreshPicker()
         })
         objMenu.addItem(ClosureMenuItem("Close All \(arrObjTabs.count) Tabs") { [weak self] in
             self?.handlePickerClose(objWindow)
@@ -1408,8 +1430,7 @@ final class DockController {
     ///   - objWindow: Right-clicked window.
     ///   - objEvent: The click (positions the menu).
     private func handlePickerRightClick(_ objWindow: WindowInfo, objEvent: NSEvent) {
-        guard let intIndex = objPicker.intAnchorIndex,
-              let objApp = objTracker.arrObjItems[safe: intIndex]?.objRunningApp else { return }
+        guard let objApp = objPickerApp else { return }
 
         let objMenu = NSMenu()
         if objWindow.blnIsOnOtherSpace {
@@ -1424,7 +1445,7 @@ final class DockController {
         if !objWindow.blnIsMinimized, !objWindow.blnIsOnOtherSpace, let objElement = objWindow.objElement {
             objMenu.addItem(ClosureMenuItem("Minimize") { [weak self] in
                 AXUIElementSetAttributeValue(objElement, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
-                self?.refreshPicker(forIndex: intIndex)
+                self?.refreshPicker()
             })
         }
         objMenu.addItem(ClosureMenuItem("Close Window") { [weak self] in
@@ -1492,6 +1513,10 @@ final class DockController {
                 NSMenu.popUpContextMenu(objMenu, with: objEvent, for: self.objHostingView)
             }
             objGrid.onFooter = nil
+            arrObjGridMembers = arrObjMembers
+            objGrid.onHoverTile = { [weak self] intTile in
+                self?.handleGridTileHover(intTile, arrObjMembers: arrObjMembers)
+            }
             // Click the group's name in the popover to rename it in place.
             objGrid.onRename = { [weak self] strName in
                 self?.objTracker.renameGroup(strGroupId, to: strName)
@@ -1530,6 +1555,8 @@ final class DockController {
                 NSWorkspace.shared.open(objFolder)
             }
             objGrid.onRename = nil
+            objGrid.onHoverTile = nil
+            arrObjGridMembers = []
             objGrid.show(
                 strTitle: objItem.strName,
                 arrObjEntries: arrObjEntries,
@@ -1546,13 +1573,186 @@ final class DockController {
     }
 
     /// Re-lists the picker's windows shortly after a change (e.g. a closed tab retitles its window).
-    /// - Parameter intIndex: Dock item the picker belongs to.
-    private func refreshPicker(forIndex intIndex: Int) {
+    private func refreshPicker() {
+        let intAnchor = objPicker.intAnchorIndex
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(200))
-            guard let self, self.objPicker.intAnchorIndex == intIndex else { return }
-            self.showPicker(forIndex: intIndex, arrObjWindows: nil)
+            // Skip if the picker has since closed or moved to another app.
+            guard let self, self.objPicker.blnIsVisible, self.objPicker.intAnchorIndex == intAnchor else { return }
+            self.fnPickerRefresh?()
         }
+    }
+
+    // MARK: - Middle-click to quit
+
+    /// Watches middle-button releases (in MacDock and system-wide, since AppKit
+    /// doesn't reliably route them to the dock's panels) to quit apps.
+    private func installMiddleClickMonitors() {
+        objLocalMiddleMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseUp) { [weak self] objEvent in
+            let intButton = objEvent.buttonNumber
+            let dblTimestamp = objEvent.timestamp
+            let blnHandled = MainActor.assumeIsolated {
+                self?.handleMiddleClick(intButton: intButton, dblTimestamp: dblTimestamp) ?? false
+            }
+            return blnHandled ? nil : objEvent
+        }
+        objGlobalMiddleMonitor = NSEvent.addGlobalMonitorForEvents(matching: .otherMouseUp) { [weak self] objEvent in
+            let intButton = objEvent.buttonNumber
+            let dblTimestamp = objEvent.timestamp
+            MainActor.assumeIsolated {
+                _ = self?.handleMiddleClick(intButton: intButton, dblTimestamp: dblTimestamp)
+            }
+        }
+    }
+
+    /// Middle-click on a dock app or group-popover app quits it; on a group, quits
+    /// the group's running apps. (Middle-clicks on preview cards close windows,
+    /// handled by the picker.)
+    /// - Parameters:
+    ///   - intButton: Released button number.
+    ///   - dblTimestamp: Event time (identifies the click).
+    /// - Returns: Whether the click was used.
+    private func handleMiddleClick(intButton: Int, dblTimestamp: TimeInterval) -> Bool {
+        guard intButton == 2, dblTimestamp != dblLastMiddleTimestamp, objState.objDrag == nil else { return false }
+        let objMouse = NSEvent.mouseLocation
+        if objPicker.blnIsVisible && objPicker.objFrame.contains(objMouse) { return false }
+
+        var arrObjTargets: [DockItem] = []
+        var strGroupName: String?
+        if objGrid.contains(objMouse) {
+            // A tile in a group popover.
+            guard let intTile = objGrid.intHoveredTile, let objMember = arrObjGridMembers[safe: intTile] else { return false }
+            arrObjTargets = [objMember]
+        } else if blnMouseOverDock, let intIndex = objState.intHoveredIndex, let objItem = objTracker.arrObjItems[safe: intIndex] {
+            switch objItem.enmKind {
+            case .app:
+                arrObjTargets = [objItem]
+            case .group(_, let arrObjMembers):
+                arrObjTargets = arrObjMembers
+                strGroupName = objItem.strName
+            default:
+                return false
+            }
+        } else {
+            return false
+        }
+
+        dblLastMiddleTimestamp = dblTimestamp
+        let arrObjApps = arrObjTargets.compactMap { objItem in
+            objItem.objRunningApp.flatMap { $0.isTerminated ? nil : (objItem.strName, $0) }
+        }
+        guard !arrObjApps.isEmpty else { return true }
+        // Act after the monitor returns: the confirmation is modal.
+        Task { @MainActor [weak self] in
+            self?.quitApps(arrObjApps, strGroupName: strGroupName)
+        }
+        return true
+    }
+
+    /// Quits apps, first asking when that would close several windows (or apps).
+    /// - Parameters:
+    ///   - arrObjApps: Display names and running apps.
+    ///   - strGroupName: Group name, when quitting a whole group.
+    private func quitApps(_ arrObjApps: [(String, NSRunningApplication)], strGroupName: String?) {
+        let intWindows = arrObjApps.reduce(0) { $0 + objWindowService.windows(for: $1.1).count }
+
+        if intWindows > 1 || arrObjApps.count > 1 {
+            let objAlert = NSAlert()
+            let strWindows = "\(intWindows) open window\(intWindows == 1 ? "" : "s")"
+            if let strGroupName {
+                objAlert.messageText = "Quit \(arrObjApps.count) app\(arrObjApps.count == 1 ? "" : "s") in “\(strGroupName)”?"
+                objAlert.informativeText = "\(arrObjApps.map(\.0).joined(separator: ", ")) — \(strWindows) will close."
+            } else {
+                objAlert.messageText = "Quit \(arrObjApps[0].0)?"
+                objAlert.informativeText = "It has \(strWindows), which will all close."
+            }
+            objAlert.addButton(withTitle: "Quit")
+            objAlert.addButton(withTitle: "Cancel")
+
+            // The alert needs MacDock in front; give focus back if the user cancels.
+            let objPrevious = NSWorkspace.shared.frontmostApplication
+            hidePicker()
+            blnMenuOpen = true
+            NSApp.activate()
+            let enmResponse = objAlert.runModal()
+            blnMenuOpen = false
+            updateAutoHide()
+            guard enmResponse == .alertFirstButtonReturn else {
+                if let objPrevious, objPrevious != NSRunningApplication.current { objPrevious.activate() }
+                return
+            }
+        }
+
+        hidePicker()
+        for (_, objApp) in arrObjApps {
+            objApp.terminate()
+        }
+    }
+
+    // MARK: - Group member previews
+
+    /// Picker anchor IDs for group tiles: negative, so they never match a dock slot.
+    /// - Parameter intTile: Tile index.
+    /// - Returns: Anchor ID.
+    private static func gridAnchor(forTile intTile: Int) -> Int { -1 - intTile }
+
+    /// Hovering a group member's tile previews its windows (after the usual delay).
+    /// - Parameters:
+    ///   - intTile: Hovered tile, or `nil` when the cursor left the tiles.
+    ///   - arrObjMembers: The group's apps.
+    private func handleGridTileHover(_ intTile: Int?, arrObjMembers: [DockItem]) {
+        intGridHoveredTile = intTile
+        objShowPickerTask?.cancel()
+        guard let intTile else {
+            scheduleHidePicker()
+            return
+        }
+        objHidePickerTask?.cancel()
+        let intAnchor = Self.gridAnchor(forTile: intTile)
+        guard objPicker.intAnchorIndex != intAnchor else { return }
+
+        objShowPickerTask = Task { [weak self] in
+            guard let self else { return }
+            if self.objPicker.blnIsVisible {
+                // Crossing other tiles on the way to the open picker: hold it.
+                await self.waitWhileHeadingToPicker()
+            } else {
+                try? await Task.sleep(for: .seconds(self.objSettings.fltPreviewDelay))
+            }
+            guard !Task.isCancelled, self.intGridHoveredTile == intTile, !self.objPicker.blnMouseInside,
+                  let objMember = arrObjMembers[safe: intTile] else { return }
+            self.showGridPicker(for: objMember, intTile: intTile)
+        }
+    }
+
+    /// Opens the picker for a group member, attached to the group popover.
+    /// - Parameters:
+    ///   - objMember: The member app.
+    ///   - intTile: Its tile.
+    private func showGridPicker(for objMember: DockItem, intTile: Int) {
+        guard objGrid.blnIsVisible, let objApp = objMember.objRunningApp, !objApp.isTerminated,
+              AccessibilityPermission.blnIsTrusted else {
+            hidePicker()
+            return
+        }
+        let arrObjWindows = markNew(objWindowService.windows(for: objApp))
+        guard !arrObjWindows.isEmpty else {
+            hidePicker()
+            return
+        }
+        objPicker.blnLivePreviews = objSettings.blnLivePreviews
+        objPicker.blnReduceOnBattery = objSettings.blnReducePreviewsOnBattery
+        objPickerApp = objApp
+        fnPickerRefresh = { [weak self] in self?.showGridPicker(for: objMember, intTile: intTile) }
+        objPicker.show(
+            strAppName: objMember.strName,
+            objAppIcon: objMember.objIcon,
+            arrObjWindows: arrObjWindows,
+            intAnchorIndex: Self.gridAnchor(forTile: intTile),
+            objAnchorPoint: objGrid.previewAnchor(forTile: intTile, enmPosition: objSettings.enmPosition)
+        )
+        objPickerPathStart = NSEvent.mouseLocation
+        installOutsideClickMonitor()
     }
 
     /// Hides the picker after a short grace period unless the cursor returns to it or the dock.
@@ -1564,7 +1764,7 @@ final class DockController {
             // Still travelling toward the picker (slowly): don't pull it away.
             await self.waitWhileHeadingToPicker()
             guard !Task.isCancelled else { return }
-            if !self.objPicker.blnMouseInside && self.objState.intHoveredIndex == nil {
+            if !self.objPicker.blnMouseInside && self.objState.intHoveredIndex == nil && self.intGridHoveredTile == nil {
                 self.hidePicker()
                 self.updateAutoHide()
             }
@@ -1710,6 +1910,18 @@ final class DockController {
     /// - Parameter intIndex: Dock item index.
     func debugToggleGrid(atIndex intIndex: Int) {
         toggleGrid(forIndex: intIndex)
+    }
+
+    /// Debug aid: previews a group member's windows as if its tile were hovered.
+    /// - Parameter intTile: Tile in the open group popover.
+    func debugPreviewGridTile(_ intTile: Int) {
+        guard let objMember = arrObjGridMembers[safe: intTile] else { return }
+        showGridPicker(for: objMember, intTile: intTile)
+    }
+
+    /// Debug aid: starts renaming the open group popover's title.
+    func debugEditGridTitle() {
+        objGrid.debugBeginTitleEditing()
     }
 
     /// Debug aid: rapidly switches the picker across every running app, the

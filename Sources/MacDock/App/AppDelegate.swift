@@ -176,6 +176,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 try? await Task.sleep(for: .seconds(1))
                 objController.debugToggleGrid(atIndex: intIndex)
+                // Optional follow-ups: `--grid-preview=TILE`, `--grid-rename`.
+                try? await Task.sleep(for: .milliseconds(400))
+                if let strTile = arrStrArgs.first(where: { $0.hasPrefix("--grid-preview=") }),
+                   let intTile = Int(strTile.dropFirst("--grid-preview=".count)) {
+                    objController.debugPreviewGridTile(intTile)
+                }
+                if arrStrArgs.contains("--grid-rename") {
+                    objController.debugEditGridTitle()
+                }
             }
         }
         if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--bring-here=") }),
