@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 import ServiceManagement
 
@@ -81,6 +81,51 @@ enum DockTint: String, CaseIterable, Identifiable {
 struct DockGroup: Codable, Equatable {
     var strName: String
     var arrStrMembers: [String]
+    /// Tile color as `#RRGGBB`; `nil` for the default frosted gray.
+    var strColorHex: String? = nil
+}
+
+/// Color choices offered for groups.
+enum GroupColor {
+    /// `(name, hex)`; `nil` hex means the default frosted look.
+    static let arrObjPresets: [(strName: String, strHex: String?)] = [
+        ("Default", nil),
+        ("Red", "#EF4444"),
+        ("Orange", "#F97316"),
+        ("Yellow", "#EAB308"),
+        ("Green", "#22C55E"),
+        ("Teal", "#14B8A6"),
+        ("Blue", "#3B82F6"),
+        ("Purple", "#8B5CF6"),
+        ("Pink", "#EC4899"),
+        ("Graphite", "#52525B"),
+    ]
+
+    /// Parses `#RRGGBB` into an AppKit color.
+    /// - Parameter strHex: Hex string.
+    /// - Returns: Color, or `nil` if malformed.
+    static func nsColor(_ strHex: String?) -> NSColor? {
+        guard let strHex, let intValue = UInt32(strHex.trimmingCharacters(in: CharacterSet(charactersIn: "# ")), radix: 16) else { return nil }
+        return NSColor(srgbRed: CGFloat((intValue >> 16) & 0xFF) / 255,
+                       green: CGFloat((intValue >> 8) & 0xFF) / 255,
+                       blue: CGFloat(intValue & 0xFF) / 255,
+                       alpha: 1)
+    }
+
+    /// Round swatch image for menus and pickers.
+    /// - Parameter strHex: Color, or `nil` for the default gray.
+    /// - Returns: 14-pt swatch.
+    static func swatch(_ strHex: String?) -> NSImage {
+        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { objRect in
+            let objPath = NSBezierPath(ovalIn: objRect.insetBy(dx: 1, dy: 1))
+            (nsColor(strHex) ?? NSColor(white: 0.6, alpha: 0.6)).setFill()
+            objPath.fill()
+            NSColor.black.withAlphaComponent(0.2).setStroke()
+            objPath.lineWidth = 0.5
+            objPath.stroke()
+            return true
+        }
+    }
 }
 
 /// Entries in the pinned list. Stored as strings so older pin lists (plain

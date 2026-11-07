@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Owns the dock panel and turns mouse input into actions.
@@ -1039,9 +1040,10 @@ final class DockController {
                 objMenu.addItem(objEntry)
             }
             objMenu.addItem(.separator())
-            objMenu.addItem(ClosureMenuItem("Rename Group…") { [weak self] in
-                self?.renameGroup(strGroupId, strCurrent: objItem.strName)
+            objMenu.addItem(ClosureMenuItem("Edit Group…") { [weak self] in
+                self?.editGroup(strGroupId)
             })
+            objMenu.addItem(colorMenuItem(forGroup: strGroupId))
             objMenu.addItem(ClosureMenuItem("Ungroup") { [weak self] in
                 self?.objTracker.ungroup(strGroupId)
             })
@@ -1095,24 +1097,65 @@ final class DockController {
         return objCopy
     }
 
-    /// Asks for a new group name.
-    /// - Parameters:
-    ///   - strGroupId: Group.
-    ///   - strCurrent: Current name (prefilled).
-    private func renameGroup(_ strGroupId: String, strCurrent: String) {
+    /// "Color ▸" submenu with a swatch per preset; the current one is checked.
+    /// - Parameter strGroupId: Group.
+    /// - Returns: Menu item with the submenu.
+    private func colorMenuItem(forGroup strGroupId: String) -> NSMenuItem {
+        let strCurrent = objTracker.group(strGroupId)?.strColorHex
+        let objItem = NSMenuItem(title: "Color", action: nil, keyEquivalent: "")
+        let objSubmenu = NSMenu()
+        for objPreset in GroupColor.arrObjPresets {
+            let objEntry = ClosureMenuItem(objPreset.strName, objState: objPreset.strHex == strCurrent ? .on : .off) { [weak self] in
+                self?.objTracker.setGroupColor(strGroupId, to: objPreset.strHex)
+            }
+            objEntry.image = GroupColor.swatch(objPreset.strHex)
+            objSubmenu.addItem(objEntry)
+        }
+        objItem.submenu = objSubmenu
+        return objItem
+    }
+
+    /// Edits a group's name and color in one dialog.
+    /// - Parameter strGroupId: Group.
+    private func editGroup(_ strGroupId: String) {
+        guard let objGroup = objTracker.group(strGroupId) else { return }
         NSApp.activate()
+
         let objAlert = NSAlert()
-        objAlert.messageText = "Rename Group"
-        objAlert.addButton(withTitle: "Rename")
+        objAlert.messageText = "Edit Group"
+        objAlert.addButton(withTitle: "Save")
         objAlert.addButton(withTitle: "Cancel")
-        let objField = NSTextField(string: strCurrent)
-        objField.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
-        objAlert.accessoryView = objField
+
+        // Name field above a color picker of swatches.
+        let objField = NSTextField(string: objGroup.strName)
+        objField.placeholderString = "Group name"
+        let objColorPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        for objPreset in GroupColor.arrObjPresets {
+            objColorPopup.addItem(withTitle: objPreset.strName)
+            objColorPopup.lastItem?.image = GroupColor.swatch(objPreset.strHex)
+        }
+        let intCurrent = GroupColor.arrObjPresets.firstIndex { $0.strHex == objGroup.strColorHex } ?? 0
+        objColorPopup.selectItem(at: intCurrent)
+
+        let objColorRow = NSStackView(views: [NSTextField(labelWithString: "Color:"), objColorPopup])
+        objColorRow.spacing = 8
+        let objStack = NSStackView(views: [objField, objColorRow])
+        objStack.orientation = .vertical
+        objStack.alignment = .leading
+        objStack.spacing = 10
+        objStack.frame = NSRect(x: 0, y: 0, width: 240, height: 62)
+        objField.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        objAlert.accessoryView = objStack
         objAlert.window.initialFirstResponder = objField
+
         guard objAlert.runModal() == .alertFirstButtonReturn else { return }
         let strName = objField.stringValue.trimmingCharacters(in: .whitespaces)
-        if !strName.isEmpty {
+        if !strName.isEmpty && strName != objGroup.strName {
             objTracker.renameGroup(strGroupId, to: strName)
+        }
+        let strHex = GroupColor.arrObjPresets[safe: objColorPopup.indexOfSelectedItem]?.strHex
+        if strHex != objGroup.strColorHex {
+            objTracker.setGroupColor(strGroupId, to: strHex)
         }
     }
 
@@ -1422,7 +1465,8 @@ final class DockController {
                 strFooter: nil,
                 strAnchorId: objItem.strBundleId,
                 objAnchorPoint: anchorPoint(forIndex: intIndex),
-                enmPosition: objSettings.enmPosition
+                enmPosition: objSettings.enmPosition,
+                objTint: objTracker.group(strGroupId)?.strColorHex.map { Color(strHex: $0).opacity(0.22) }
             )
 
         case .folder(let objFolder):

@@ -7,15 +7,24 @@ enum GroupIconRenderer {
     private static let fltSize: CGFloat = 256
 
     /// Builds the group icon.
-    /// - Parameter arrObjIcons: Member icons (first four are used).
+    /// - Parameters:
+    ///   - arrObjIcons: Member icons (first four are used).
+    ///   - objColor: Tile color, or `nil` for frosted gray.
     /// - Returns: Composite image.
-    static func icon(for arrObjIcons: [NSImage]) -> NSImage {
+    static func icon(for arrObjIcons: [NSImage], objColor: NSColor? = nil) -> NSImage {
         NSImage(size: NSSize(width: fltSize, height: fltSize), flipped: true) { objRect in
-            // Frosted rounded tile, inset like a real app icon (~10% margin).
+            // Rounded tile, inset like a real app icon (~10% margin).
             let objTile = objRect.insetBy(dx: fltSize * 0.08, dy: fltSize * 0.08)
             let objPath = NSBezierPath(roundedRect: objTile, xRadius: objTile.width * 0.22, yRadius: objTile.width * 0.22)
-            NSColor(white: 0.5, alpha: 0.35).setFill()
-            objPath.fill()
+            if let objColor {
+                // Top-to-bottom sheen so a colored tile reads like an app icon.
+                NSGradient(starting: objColor.blended(withFraction: 0.18, of: .white) ?? objColor,
+                           ending: objColor.blended(withFraction: 0.12, of: .black) ?? objColor)?
+                    .draw(in: objPath, angle: 90)
+            } else {
+                NSColor(white: 0.5, alpha: 0.35).setFill()
+                objPath.fill()
+            }
             NSColor(white: 1, alpha: 0.25).setStroke()
             objPath.lineWidth = 3
             objPath.stroke()

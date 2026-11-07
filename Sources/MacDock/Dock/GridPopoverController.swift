@@ -83,6 +83,8 @@ final class GridPopoverState {
     var arrObjEntries: [GridEntry] = []
     var strFooter: String?
     var strEmptyText = "Empty"
+    /// Light color wash (a group's color), or `nil`.
+    var objTint: Color?
     var objHovered: GridPopoverLayout.Hit?
 }
 
@@ -128,7 +130,7 @@ struct GridPopoverView: View {
         }
         .padding(.bottom, GridPopoverLayout.fltPadding / 2)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .dockGlass(cornerRadius: 16)
+        .dockGlass(cornerRadius: 16, tint: objState.objTint)
     }
 
     /// One tile: icon, name, and a running dot.
@@ -223,8 +225,11 @@ final class GridPopoverController: NSObject, NSDraggingSource {
     ///   - strAnchorId: Dock item ID (used to toggle on a second click).
     ///   - objAnchorPoint: Screen point on the icon's outer edge.
     ///   - enmPosition: Dock edge.
-    func show(strTitle: String, arrObjEntries: [GridEntry], strFooter: String?, strAnchorId: String, objAnchorPoint: CGPoint, enmPosition: DockPosition) {
+    ///   - objTint: Optional color wash.
+    func show(strTitle: String, arrObjEntries: [GridEntry], strFooter: String?, strAnchorId: String,
+              objAnchorPoint: CGPoint, enmPosition: DockPosition, objTint: Color? = nil) {
         objState.strTitle = strTitle
+        objState.objTint = objTint
         objState.arrObjEntries = arrObjEntries
         objState.strFooter = strFooter
         objState.objHovered = nil

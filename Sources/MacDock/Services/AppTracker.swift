@@ -205,6 +205,22 @@ final class AppTracker {
         rebuild()
     }
 
+    /// Sets a group's tile color.
+    /// - Parameters:
+    ///   - strGroupId: Group.
+    ///   - strHex: `#RRGGBB`, or `nil` for the default look.
+    func setGroupColor(_ strGroupId: String, to strHex: String?) {
+        objSettings.dictObjGroups[strGroupId]?.strColorHex = strHex
+        rebuild()
+    }
+
+    /// A group's settings (name, color, members).
+    /// - Parameter strGroupId: Group.
+    /// - Returns: The group, if it exists.
+    func group(_ strGroupId: String) -> DockGroup? {
+        objSettings.dictObjGroups[strGroupId]
+    }
+
     /// Dissolves a group, putting its apps back on the bar where it was.
     /// - Parameter strGroupId: Group.
     func ungroup(_ strGroupId: String) {
@@ -317,7 +333,7 @@ final class AppTracker {
                     strBundleId: strToken,
                     enmKind: .group(strGroupId: strGroupId, arrObjMembers: arrObjMembers),
                     strName: objGroup.strName,
-                    objIcon: GroupIconRenderer.icon(for: arrObjMembers.map(\.objIcon)),
+                    objIcon: GroupIconRenderer.icon(for: arrObjMembers.map(\.objIcon), objColor: GroupColor.nsColor(objGroup.strColorHex)),
                     objAppUrl: nil,
                     // Shows a running dot when any member runs.
                     objRunningApp: arrObjMembers.lazy.compactMap(\.objRunningApp).first,
@@ -396,8 +412,9 @@ final class AppTracker {
     private func signature(of arrObjItems: [DockItem]) -> [String] {
         arrObjItems.map { objItem in
             var strSignature = objItem.strBundleId + (objItem.blnIsPinned ? "|p" : "")
-            if case .group(_, let arrObjMembers) = objItem.enmKind {
+            if case .group(let strGroupId, let arrObjMembers) = objItem.enmKind {
                 strSignature += "|" + arrObjMembers.map(\.strBundleId).joined(separator: ",") + "|" + objItem.strName
+                strSignature += "|" + (objSettings.dictObjGroups[strGroupId]?.strColorHex ?? "")
             }
             if case .trash(let blnIsFull) = objItem.enmKind {
                 strSignature += blnIsFull ? "|full" : "|empty"
