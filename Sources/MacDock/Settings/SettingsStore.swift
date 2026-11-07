@@ -205,6 +205,7 @@ final class SettingsStore {
         static let strCompact = "Compact"
         static let strIndicatorStyle = "IndicatorStyle"
         static let strAddedDownloads = "DidAddDownloadsStack"
+        static let strTrailingPinned = "TrailingPinned"
     }
 
     /// Pins used on first launch.
@@ -253,6 +254,9 @@ final class SettingsStore {
 
     /// Pinned apps in dock order.
     var arrStrPinnedBundleIds: [String] { didSet { objDefaults.set(arrStrPinnedBundleIds, forKey: Key.strPinned) } }
+
+    /// Folder stacks pinned on the right, next to the Trash (like the native Dock).
+    var arrStrTrailingPinned: [String] { didSet { objDefaults.set(arrStrTrailingPinned, forKey: Key.strTrailingPinned) } }
 
     /// Whether the app's name appears above a hovered icon.
     var blnShowLabels: Bool { didSet { objDefaults.set(blnShowLabels, forKey: Key.strShowLabels) } }
@@ -343,6 +347,7 @@ final class SettingsStore {
         fltPreviewDelay = objDefaults.double(forKey: Key.strPreviewDelay)
         blnHideNativeDock = objDefaults.bool(forKey: Key.strHideNativeDock)
         arrStrPinnedBundleIds = objDefaults.stringArray(forKey: Key.strPinned) ?? Self.arrStrDefaultPinned
+        arrStrTrailingPinned = objDefaults.stringArray(forKey: Key.strTrailingPinned) ?? []
         blnShowLabels = objDefaults.bool(forKey: Key.strShowLabels)
         blnLivePreviews = objDefaults.bool(forKey: Key.strLivePreviews)
         blnReducePreviewsOnBattery = objDefaults.bool(forKey: Key.strReducePreviewsOnBattery)
@@ -362,10 +367,10 @@ final class SettingsStore {
         if !objDefaults.bool(forKey: Key.strAddedDownloads) {
             objDefaults.set(true, forKey: Key.strAddedDownloads)
             let strDownloads = PinnedToken.folder(NSHomeDirectory() + "/Downloads").strRaw
-            if !arrStrPinnedBundleIds.contains(strDownloads) {
-                arrStrPinnedBundleIds.append(strDownloads)
-                // Observers don't run inside init; persist explicitly.
-                objDefaults.set(arrStrPinnedBundleIds, forKey: Key.strPinned)
+            if !arrStrPinnedBundleIds.contains(strDownloads) && !arrStrTrailingPinned.contains(strDownloads) {
+                // On the right, next to the Trash. Observers don't run inside init; persist explicitly.
+                arrStrTrailingPinned.append(strDownloads)
+                objDefaults.set(arrStrTrailingPinned, forKey: Key.strTrailingPinned)
             }
         }
     }

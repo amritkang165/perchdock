@@ -637,27 +637,47 @@ final class DockController {
         let intPinnedEnd: Int
         /// Running-section slots, or `nil` when the dragged item can't go there.
         let objRunning: ClosedRange<Int>?
+        /// Right-hand stack slots (before minimized windows and the Trash), or `nil`
+        /// when the dragged item can't go there (only folders can).
+        let objTrailing: ClosedRange<Int>?
     }
 
-    /// Works out the pinned and running slot ranges for a drag.
+    /// Works out the pinned, running and right-hand slot ranges for a drag.
     /// - Parameter objDragged: Item being dragged.
     /// - Returns: Section boundaries.
     private func dropSections(for objDragged: DockItem) -> DropSections {
         let arrObjItems = objTracker.arrObjItems
-        let intPinnedOthers = arrObjItems.filter(\.blnIsPinned).count - (objDragged.blnIsPinned ? 1 : 0)
+        let blnDraggedLeftPinned = objDragged.blnIsPinned && !objDragged.blnIsTrailing
+        let intPinnedOthers = arrObjItems.filter { $0.blnIsPinned && !$0.blnIsTrailing }.count - (blnDraggedLeftPinned ? 1 : 0)
         let intRunningOthers = arrObjItems.filter { $0.blnIsApp && !$0.blnIsPinned }.count - (objDragged.blnIsPinned ? 0 : 1)
+
+        // Folders can also sit on the right: just after the trailing divider, among
+        // the other right-hand stacks (slots count the items other than the dragged one).
+        var objTrailing: ClosedRange<Int>?
+        if case .folder = objDragged.enmKind {
+            let arrObjOthers = arrObjItems.filter { $0.strBundleId != objDragged.strBundleId }
+            let intStacks = arrObjOthers.filter(\.blnIsTrailing).count
+            if let intDivider = arrObjOthers.firstIndex(where: { $0.strBundleId == AppTracker.strTrailingDividerId }) {
+                objTrailing = (intDivider + 1)...(intDivider + 1 + intStacks)
+            } else {
+                // No right-hand section yet: the end of the dock starts one.
+                objTrailing = arrObjOthers.count...arrObjOthers.count
+            }
+        }
 
         // Only running apps can live in the running section (others would vanish).
         guard objDragged.blnIsApp, objDragged.blnIsRunning, intRunningOthers > 0 || !objDragged.blnIsPinned else {
-            return DropSections(intPinnedEnd: intPinnedOthers, objRunning: nil)
+            return DropSections(intPinnedEnd: intPinnedOthers, objRunning: nil, objTrailing: objTrailing)
         }
         // The automatic divider sits between the sections when both have items.
         let intRunningStart = intPinnedOthers + (intPinnedOthers > 0 ? 1 : 0)
-        return DropSections(intPinnedEnd: intPinnedOthers, objRunning: intRunningStart...(intRunningStart + intRunningOthers))
+        return DropSections(intPinnedEnd: intPinnedOthers, objRunning: intRunningStart...(intRunningStart + intRunningOthers),
+                            objTrailing: objTrailing)
     }
 
     /// Clamps a drop slot to where the item may go: the pinned section, or — for a
-    /// running app — anywhere among the running apps.
+    /// running app — anywhere among the running apps, or — for a folder — the
+    /// right-hand stacks.
     /// - Parameters:
     ///   - objDragged: Item being dragged.
     ///   - intIndex: Its current index.
@@ -667,6 +687,13 @@ final class DockController {
         let objSections = dropSections(for: objDragged)
         if intSlot <= objSections.intPinnedEnd {
             return intSlot
+        }
+        if let objTrailing = objSections.objTrailing {
+            // Past the left section: snap to whichever side is nearer.
+            let fltMidpoint = Double(objSections.intPinnedEnd + objTrailing.lowerBound) / 2
+            return Double(intSlot) >= fltMidpoint
+                ? min(max(intSlot, objTrailing.lowerBound), objTrailing.upperBound)
+                : objSections.intPinnedEnd
         }
         guard let objRunning = objSections.objRunning else {
             // Can't leave the pinned section: stop at its end (or snap back if it was running).
@@ -738,11 +765,18 @@ final class DockController {
         objDragIcon.land(at: objTarget)
         objState.objDrag = nil
         guard objDrag.intTargetSlot != objDrag.intIndex else { return }
+        let objSections = dropSections(for: objItem)
 
         // Into the running section: unpin (if pinned) and keep the dropped position.
-        if let objRunning = dropSections(for: objItem).objRunning,
-           objDrag.intTargetSlot > dropSections(for: objItem).intPinnedEnd, objRunning.contains(objDrag.intTargetSlot) {
+        if let objRunning = objSections.objRunning,
+           objDrag.intTargetSlot > objSections.intPinnedEnd, objRunning.contains(objDrag.intTargetSlot) {
             objTracker.placeInRunning(objItem.strBundleId, at: objDrag.intTargetSlot - objRunning.lowerBound)
+            return
+        }
+        // A folder onto the right-hand side, next to the Trash.
+        if let objTrailing = objSections.objTrailing,
+           objDrag.intTargetSlot > objSections.intPinnedEnd, objTrailing.contains(objDrag.intTargetSlot) {
+            objTracker.placeInTrailing(objItem.strBundleId, at: objDrag.intTargetSlot - objTrailing.lowerBound)
             return
         }
         objTracker.move(objItem.strBundleId, toSlot: objDrag.intTargetSlot)
@@ -972,7 +1006,7 @@ final class DockController {
         }
 
         // Between items: pin apps and add folders as stacks, in drop order.
-        let intPinnedCount = objTracker.arrObjItems.filter(\.blnIsPinned).count
+        let intPinnedCount = objTracker.arrObjItems.filter { $0.blnIsPinned && !$0.blnIsTrailing }.count
         var intSlot = min(objGeometry.dropSlot(atMain: fltMain, intDragIndex: -1), intPinnedCount)
         var blnDidAnything = false
         for objUrl in arrObjUrls {
@@ -1035,7 +1069,7 @@ final class DockController {
     ///   - objMenu: Menu to extend.
     ///   - intIndex: Item that was right-clicked (new things go after it if it's pinned).
     private func addDockItems(to objMenu: NSMenu, afterIndex intIndex: Int?) {
-        let intPinnedCount = objTracker.arrObjItems.filter(\.blnIsPinned).count
+        let intPinnedCount = objTracker.arrObjItems.filter { $0.blnIsPinned && !$0.blnIsTrailing }.count
         // After a pinned item; otherwise at the end of the pinned section.
         let intInsert = intIndex.map { $0 < intPinnedCount ? $0 + 1 : intPinnedCount } ?? intPinnedCount
 

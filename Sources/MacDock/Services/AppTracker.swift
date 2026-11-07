@@ -27,6 +27,8 @@ struct DockItem: Identifiable {
     let objAppUrl: URL?
     let objRunningApp: NSRunningApplication?
     let blnIsPinned: Bool
+    /// Pinned on the right (next to the Trash) instead of the left section.
+    var blnIsTrailing = false
 
     var id: String { strBundleId }
     var blnIsRunning: Bool { objRunningApp.map { !$0.isTerminated } ?? false }
@@ -58,13 +60,15 @@ struct DockItem: Identifiable {
 /// apps, minimized windows and the Trash.
 ///
 /// Order: pinned entries (apps, dividers, groups, folders) | running apps |
-/// minimized windows, Trash — sections separated by automatic dividers.
+/// right-side folder stacks, minimized windows, Trash — sections separated by
+/// automatic dividers.
 @MainActor
 @Observable
 final class AppTracker {
     private static let strTrashId = "trash"
     private static let strRunningDividerId = "auto-divider:running"
-    private static let strTrailingDividerId = "auto-divider:trailing"
+    /// Divider before the right-hand section (stacks, minimized windows, Trash).
+    static let strTrailingDividerId = "auto-divider:trailing"
 
     /// Items in display order.
     private(set) var arrObjItems: [DockItem] = []
@@ -100,6 +104,8 @@ final class AppTracker {
     ///   - strToken: Entry to pin.
     ///   - intIndex: Position among visible pinned items, or `nil` to append.
     func pin(_ strToken: String, at intIndex: Int? = nil) {
+        // Coming from the right-hand section: it lives on the left now.
+        objSettings.arrStrTrailingPinned.removeAll { $0 == strToken }
         var arrStrVisible = visiblePinnedIds().filter { $0 != strToken }
         let intTarget = min(max(intIndex ?? arrStrVisible.count, 0), arrStrVisible.count)
         arrStrVisible.insert(strToken, at: intTarget)
@@ -113,6 +119,19 @@ final class AppTracker {
         if case .group(let strGroupId) = PinnedToken(strToken) {
             objSettings.dictObjGroups.removeValue(forKey: strGroupId)
         }
+        objSettings.arrStrTrailingPinned.removeAll { $0 == strToken }
+        savePinned(visiblePinnedIds().filter { $0 != strToken })
+    }
+
+    /// Puts a folder stack on the right, next to the Trash (moving it from the left if needed).
+    /// - Parameters:
+    ///   - strToken: Folder token.
+    ///   - intIndex: Position among right-hand stacks.
+    func placeInTrailing(_ strToken: String, at intIndex: Int) {
+        var arrStrTrailing = objSettings.arrStrTrailingPinned.filter { $0 != strToken }
+        arrStrTrailing.insert(strToken, at: min(max(intIndex, 0), arrStrTrailing.count))
+        objSettings.arrStrTrailingPinned = arrStrTrailing
+        // Drop it from the left section (rebuilds).
         savePinned(visiblePinnedIds().filter { $0 != strToken })
     }
 
@@ -267,7 +286,7 @@ final class AppTracker {
     /// Pinned tokens currently shown, in dock order.
     /// - Returns: Tokens.
     private func visiblePinnedIds() -> [String] {
-        arrObjItems.filter(\.blnIsPinned).map(\.strBundleId)
+        arrObjItems.filter { $0.blnIsPinned && !$0.blnIsTrailing }.map(\.strBundleId)
     }
 
     /// Saves a new visible pinned order, keeping entries that aren't shown right
@@ -361,18 +380,8 @@ final class AppTracker {
                 ))
 
             case .folder(let strPath):
-                let objUrl = URL(fileURLWithPath: strPath)
-                var blnIsDirectory: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: strPath, isDirectory: &blnIsDirectory), blnIsDirectory.boolValue else { continue }
-                arrObjNewItems.append(DockItem(
-                    strBundleId: strToken,
-                    enmKind: .folder(objUrl: objUrl),
-                    strName: FileManager.default.displayName(atPath: strPath),
-                    objIcon: NSWorkspace.shared.icon(forFile: strPath),
-                    objAppUrl: nil,
-                    objRunningApp: nil,
-                    blnIsPinned: true
-                ))
+                guard let objFolder = makeFolder(strToken: strToken, strPath: strPath, blnIsTrailing: false) else { continue }
+                arrObjNewItems.append(objFolder)
             }
         }
 
@@ -399,8 +408,13 @@ final class AppTracker {
             arrObjNewItems += arrObjRunningItems
         }
 
-        // 3. Minimized windows and the Trash.
+        // 3. Right-hand folder stacks, minimized windows and the Trash.
         var arrObjTrailing: [DockItem] = []
+        for strToken in objSettings.arrStrTrailingPinned {
+            guard case .folder(let strPath) = PinnedToken(strToken),
+                  let objFolder = makeFolder(strToken: strToken, strPath: strPath, blnIsTrailing: true) else { continue }
+            arrObjTrailing.append(objFolder)
+        }
         if objSettings.blnShowMinimized {
             for objMinimized in objMinimized.arrObjWindows {
                 arrObjTrailing.append(makeMinimized(objMinimized))
@@ -440,7 +454,7 @@ final class AppTracker {
     /// - Returns: Comparable signature.
     private func signature(of arrObjItems: [DockItem]) -> [String] {
         arrObjItems.map { objItem in
-            var strSignature = objItem.strBundleId + (objItem.blnIsPinned ? "|p" : "")
+            var strSignature = objItem.strBundleId + (objItem.blnIsPinned ? "|p" : "") + (objItem.blnIsTrailing ? "|t" : "")
             // Name and color changes redraw without a relayout (which would close open popovers).
             if case .group(_, let arrObjMembers) = objItem.enmKind {
                 strSignature += "|" + arrObjMembers.map(\.strBundleId).joined(separator: ",")
@@ -474,6 +488,27 @@ final class AppTracker {
             objAppUrl: objAppUrl,
             objRunningApp: objRunningApp,
             blnIsPinned: blnIsPinned
+        )
+    }
+
+    /// Builds a folder-stack item.
+    /// - Parameters:
+    ///   - strToken: Pinned token.
+    ///   - strPath: Folder path.
+    ///   - blnIsTrailing: Whether it's pinned on the right.
+    /// - Returns: Item, or `nil` if the folder doesn't exist (e.g. an unmounted drive).
+    private func makeFolder(strToken: String, strPath: String, blnIsTrailing: Bool) -> DockItem? {
+        var blnIsDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: strPath, isDirectory: &blnIsDirectory), blnIsDirectory.boolValue else { return nil }
+        return DockItem(
+            strBundleId: strToken,
+            enmKind: .folder(objUrl: URL(fileURLWithPath: strPath)),
+            strName: FileManager.default.displayName(atPath: strPath),
+            objIcon: NSWorkspace.shared.icon(forFile: strPath),
+            objAppUrl: nil,
+            objRunningApp: nil,
+            blnIsPinned: true,
+            blnIsTrailing: blnIsTrailing
         )
     }
 
