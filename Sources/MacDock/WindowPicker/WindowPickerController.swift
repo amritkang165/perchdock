@@ -22,6 +22,9 @@ final class WindowPickerController {
     /// Dock item index the picker belongs to.
     private(set) var intAnchorIndex: Int?
 
+    /// Picker frame in screen coordinates (its final frame while animating in).
+    private(set) var objFrame: NSRect = .zero
+
     /// Fired when the mouse enters or leaves the picker.
     var onMouseInsideChanged: ((Bool) -> Void)?
 
@@ -154,6 +157,7 @@ final class WindowPickerController {
 
         let objSize = WindowPickerLayout.size(forCount: objState.arrObjWindows.count, blnNotice: objState.blnNeedsPermission)
         let objFinalFrame = frame(forSize: objSize, objAnchorPoint: objAnchorPoint)
+        objFrame = objFinalFrame
 
         // Slide in from the dock's direction.
         let objEntryOffset: CGVector = switch enmPosition {

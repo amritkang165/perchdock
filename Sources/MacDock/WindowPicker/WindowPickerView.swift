@@ -214,10 +214,15 @@ private struct WindowCardView: View {
                         }
                     }
                     .overlay(alignment: .topLeading) {
-                        if let strDesktopLabel = objWindow.strDesktopLabel {
-                            desktopBadge(strDesktopLabel)
-                                .padding(WindowPickerLayout.fltCloseInset)
+                        HStack(spacing: 4) {
+                            if objWindow.blnIsNew {
+                                newBadge
+                            }
+                            if let strDesktopLabel = objWindow.strDesktopLabel {
+                                desktopBadge(strDesktopLabel)
+                            }
                         }
+                        .padding(WindowPickerLayout.fltCloseInset)
                     }
 
                 if blnIsHovered {
@@ -299,6 +304,17 @@ private struct WindowCardView: View {
                     Capsule().fill(.regularMaterial)
                 }
             }
+            .shadow(color: .black.opacity(0.2), radius: 1.5, y: 0.5)
+    }
+
+    /// Green "New" capsule for windows that appeared since you last looked.
+    private var newBadge: some View {
+        Text("New")
+            .font(.system(size: 9.5, weight: .bold))
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Color.green))
             .shadow(color: .black.opacity(0.2), radius: 1.5, y: 0.5)
     }
 

@@ -14,6 +14,8 @@ struct WindowInfo: Identifiable {
     let intWindowId: CGWindowID?
     /// "Desktop 2", "Full Screen", etc.; `nil` when minimized or unknown.
     var strDesktopLabel: String? = nil
+    /// Appeared recently and hasn't been looked at yet.
+    var blnIsNew = false
     /// AX handle; `nil` for windows on other Spaces, which AX can't see.
     let objElement: AXUIElement?
 }
@@ -27,6 +29,9 @@ struct WindowInfo: Identifiable {
 final class WindowService {
     /// Smallest size a window must have to count (filters out helper strips and popups).
     private static let fltMinWindowSide: CGFloat = 80
+
+    /// Fired after a window is raised (used to clear its "new" flag).
+    var onRaised: ((CGWindowID) -> Void)?
 
     /// Returns an app's windows: current-Space ones first (front to back, from AX),
     /// then windows on other Spaces (from the window server).
@@ -71,6 +76,9 @@ final class WindowService {
     func raise(_ objWindow: WindowInfo, of objApp: NSRunningApplication) {
         if objApp.isHidden {
             objApp.unhide()
+        }
+        if let intWindowId = objWindow.intWindowId {
+            onRaised?(intWindowId)
         }
 
         if objWindow.blnIsMinimized, let objElement = objWindow.objElement {

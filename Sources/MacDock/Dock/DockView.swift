@@ -19,6 +19,7 @@ struct DockView: View {
     let objTracker: AppTracker
     let objSettings: SettingsStore
     let objState: DockState
+    let objNewWindowTracker: NewWindowTracker
 
     var body: some View {
         let arrObjItems = objTracker.arrObjItems
@@ -51,11 +52,17 @@ struct DockView: View {
                     .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.iconCross(forSize: fltSize)))
                     .transition(.scale(scale: 0.3).combined(with: .opacity))
 
+                // Running dot; turns into a larger accent dot when the app has a window you haven't seen.
+                let blnHasNew = objItem.objRunningApp.map { objNewWindowTracker.setIntPidsWithNew.contains($0.processIdentifier) } ?? false
                 Circle()
-                    .fill(Color.primary.opacity(objTracker.strActiveBundleId == objItem.strBundleId ? 0.9 : 0.55))
-                    .frame(width: 4, height: 4)
+                    .fill(blnHasNew
+                          ? Color.accentColor
+                          : Color.primary.opacity(objTracker.strActiveBundleId == objItem.strBundleId ? 0.9 : 0.55))
+                    .frame(width: blnHasNew ? 6 : 4, height: blnHasNew ? 6 : 4)
+                    .shadow(color: blnHasNew ? Color.accentColor.opacity(0.8) : .clear, radius: 3)
                     .opacity(objItem.blnIsRunning && !blnIsDragged ? 1 : 0)
                     .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.fltIndicatorCross))
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: blnHasNew)
             }
         }
         .frame(width: objGeometry.objPanelSize.width, height: objGeometry.objPanelSize.height, alignment: .topLeading)

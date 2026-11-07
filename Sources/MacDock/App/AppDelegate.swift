@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var objAppTracker = AppTracker(objSettings: objSettings)
     private let objWindowService = WindowService()
     private let objThumbnailService = ThumbnailService()
+    private let objNewWindowTracker = NewWindowTracker()
     private let objNativeDock = NativeDockController()
     private lazy var objSettingsWindow = SettingsWindowController(objSettings: objSettings, objThumbnailService: objThumbnailService)
     private var objDockController: DockController?
@@ -30,11 +31,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         objAppTracker.start()
+        objNewWindowTracker.start()
+        // Raising a window from the dock means the user has seen it.
+        objWindowService.onRaised = { [weak self] intWindowId in
+            self?.objNewWindowTracker.markSeen(intWindowId)
+        }
 
         let objController = DockController(
             objTracker: objAppTracker,
             objWindowService: objWindowService,
             objThumbnailService: objThumbnailService,
+            objNewWindowTracker: objNewWindowTracker,
             objSettings: objSettings
         )
         objController.show()
@@ -125,8 +132,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             objController.debugMagnify(atIndex: intIndex)
         }
         if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--show-picker=") }),
-           let intIndex = Int(strArg.dropFirst("--show-picker=".count)) {
-            objController.debugShowPicker(atIndex: intIndex)
+            let intIndex = Int(strArg.dropFirst("--show-picker=".count)) {
+            // Optional `--show-picker-delay=S`: wait first (e.g. to open a window meanwhile).
+            let fltDelay = arrStrArgs.first(where: { $0.hasPrefix("--show-picker-delay=") })
+                .flatMap { Double($0.dropFirst("--show-picker-delay=".count)) } ?? 0
+            Task {
+                try? await Task.sleep(for: .seconds(fltDelay))
+                objController.debugShowPicker(atIndex: intIndex)
+            }
         }
         if arrStrArgs.contains("--open-settings") {
             objSettingsWindow.show()

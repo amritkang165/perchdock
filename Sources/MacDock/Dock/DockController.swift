@@ -24,6 +24,7 @@ final class DockController {
 
     private let objTracker: AppTracker
     private let objWindowService: WindowService
+    private let objNewWindowTracker: NewWindowTracker
     private let objSettings: SettingsStore
     private let objState = DockState()
     private let objPanel: DockPanel
@@ -58,15 +59,28 @@ final class DockController {
     ///   - objTracker: Source of dock items.
     ///   - objWindowService: Window listing and raising.
     ///   - objThumbnailService: Window thumbnails for the picker.
+    ///   - objNewWindowTracker: Flags recently opened windows.
     ///   - objSettings: User preferences.
-    init(objTracker: AppTracker, objWindowService: WindowService, objThumbnailService: ThumbnailService, objSettings: SettingsStore) {
+    init(
+        objTracker: AppTracker,
+        objWindowService: WindowService,
+        objThumbnailService: ThumbnailService,
+        objNewWindowTracker: NewWindowTracker,
+        objSettings: SettingsStore
+    ) {
         self.objTracker = objTracker
         self.objWindowService = objWindowService
+        self.objNewWindowTracker = objNewWindowTracker
         self.objSettings = objSettings
         objPicker = WindowPickerController(objThumbnailService: objThumbnailService)
 
         objPanel = DockPanel(contentRect: .zero)
-        objHostingView = TrackingHostingView(rootView: DockView(objTracker: objTracker, objSettings: objSettings, objState: objState))
+        objHostingView = TrackingHostingView(rootView: DockView(
+            objTracker: objTracker,
+            objSettings: objSettings,
+            objState: objState,
+            objNewWindowTracker: objNewWindowTracker
+        ))
         objPanel.contentView = objHostingView
         objHostingView.enableFileDrops()
 
@@ -263,7 +277,13 @@ final class DockController {
         }
 
         objState.fltMouseMain = blnOverDock && objGeometry.fltMagnification > 1.001 ? fltMain : nil
-        updateHoveredIndex(blnOverDock ? objGeometry.slotIndex(atMain: fltMain) : nil)
+        let intSlot = blnOverDock ? objGeometry.slotIndex(atMain: fltMain) : nil
+        // Remember where the cursor last was on the picker's own icon: the start of
+        // the path toward the picker.
+        if objPicker.blnIsVisible, let intSlot, intSlot == objPicker.intAnchorIndex {
+            objPickerPathStart = objScreenPoint
+        }
+        updateHoveredIndex(intSlot)
         updateHoverLabel()
 
         // Hidden dock: watch for the cursor reaching the screen edge.
@@ -423,8 +443,18 @@ final class DockController {
         objHidePickerTask?.cancel()
 
         if objPicker.blnIsVisible {
-            // A picker is open: sweeping to another icon switches instantly.
-            if objPicker.intAnchorIndex != intIndex {
+            guard objPicker.intAnchorIndex != intIndex else { return }
+            if isHeadingToPicker(NSEvent.mouseLocation) {
+                // Crossing a neighbor on the way up to the picker: hold the current
+                // picker unless the cursor settles on this icon or veers away.
+                objShowPickerTask = Task { [weak self] in
+                    guard let self else { return }
+                    await self.waitWhileHeadingToPicker()
+                    guard !Task.isCancelled, self.objState.intHoveredIndex == intIndex, !self.objPicker.blnMouseInside else { return }
+                    self.showPicker(forIndex: intIndex, arrObjWindows: nil)
+                }
+            } else {
+                // Sweeping along the dock: switch instantly.
                 showPicker(forIndex: intIndex, arrObjWindows: nil)
             }
         } else {
@@ -549,10 +579,17 @@ final class DockController {
             return
         }
 
-        let arrObjWindows = objWindowService.windows(for: objApp)
+        let arrObjWindows = markNew(objWindowService.windows(for: objApp))
         guard !arrObjWindows.isEmpty else {
             // No windows: reopen, like the native Dock.
             if let objAppUrl { objWindowService.open(objAppUrl) } else { objApp.activate() }
+            return
+        }
+
+        // A window you haven't seen yet (e.g. one an agent just opened) wins.
+        if arrObjWindows[0].blnIsNew {
+            resetCycle()
+            objWindowService.raise(arrObjWindows[0], of: objApp)
             return
         }
 
@@ -828,7 +865,8 @@ final class DockController {
             return
         }
 
-        let arrObjResolved = arrObjWindows ?? objWindowService.windows(for: objApp)
+        // Flag new windows and list them first, so the one an agent just opened is easy to spot.
+        let arrObjResolved = markNew(arrObjWindows ?? objWindowService.windows(for: objApp))
         guard !arrObjResolved.isEmpty else {
             hidePicker()
             return
@@ -841,7 +879,20 @@ final class DockController {
             intAnchorIndex: intIndex,
             objAnchorPoint: anchorPoint(forIndex: intIndex)
         )
+        objPickerPathStart = NSEvent.mouseLocation
         installOutsideClickMonitor()
+    }
+
+    /// Sets each window's "new" flag and moves new windows to the front (stable otherwise).
+    /// - Parameter arrObjWindows: Windows front to back.
+    /// - Returns: Flagged and reordered windows.
+    private func markNew(_ arrObjWindows: [WindowInfo]) -> [WindowInfo] {
+        let arrObjFlagged = arrObjWindows.map { objWindow in
+            var objCopy = objWindow
+            objCopy.blnIsNew = objNewWindowTracker.isNew(objWindow.intWindowId)
+            return objCopy
+        }
+        return arrObjFlagged.filter(\.blnIsNew) + arrObjFlagged.filter { !$0.blnIsNew }
     }
 
     /// Keeps the picker (and dock) open while the cursor is over the picker.
@@ -922,6 +973,9 @@ final class DockController {
         objHidePickerTask = Task { [weak self] in
             try? await Task.sleep(for: Self.objHoverHideDelay)
             guard !Task.isCancelled, let self else { return }
+            // Still travelling toward the picker (slowly): don't pull it away.
+            await self.waitWhileHeadingToPicker()
+            guard !Task.isCancelled else { return }
             if !self.objPicker.blnMouseInside && self.objState.intHoveredIndex == nil {
                 self.hidePicker()
                 self.updateAutoHide()
@@ -929,11 +983,86 @@ final class DockController {
         }
     }
 
+    // MARK: - Hover intent
+
+    /// Last cursor point over the picker's own icon (apex of the "safe triangle").
+    private var objPickerPathStart: CGPoint?
+
+    /// Extra width on each side of the picker's near edge, for forgiving diagonals.
+    private static let fltIntentSlack: CGFloat = 24
+    /// Resting this long on another icon means "switch to it" even inside the triangle.
+    private static let objIntentRestTime: Duration = .milliseconds(220)
+    /// Upper bound on how long intent can hold a switch or hide.
+    private static let objIntentMaxWait: Duration = .milliseconds(1200)
+
+    /// Whether the cursor is inside the triangle from where it left the picker's
+    /// icon to the picker's near edge — i.e. moving toward the picker (the
+    /// "safe triangle" used by good dropdown menus).
+    /// - Parameter objPoint: Cursor location in screen coordinates.
+    /// - Returns: `true` while heading for the picker.
+    private func isHeadingToPicker(_ objPoint: CGPoint) -> Bool {
+        guard objPicker.blnIsVisible, let objApex = objPickerPathStart else { return false }
+        let objFrame = objPicker.objFrame
+        let fltSlack = Self.fltIntentSlack
+
+        // Near-edge corners of the picker, plus the apex nudged back toward the dock edge.
+        let (objCornerA, objCornerB, objStart): (CGPoint, CGPoint, CGPoint) = switch objSettings.enmPosition {
+        case .bottom:
+            (CGPoint(x: objFrame.minX - fltSlack, y: objFrame.minY), CGPoint(x: objFrame.maxX + fltSlack, y: objFrame.minY), CGPoint(x: objApex.x, y: objApex.y - 6))
+        case .left:
+            (CGPoint(x: objFrame.minX, y: objFrame.minY - fltSlack), CGPoint(x: objFrame.minX, y: objFrame.maxY + fltSlack), CGPoint(x: objApex.x - 6, y: objApex.y))
+        case .right:
+            (CGPoint(x: objFrame.maxX, y: objFrame.minY - fltSlack), CGPoint(x: objFrame.maxX, y: objFrame.maxY + fltSlack), CGPoint(x: objApex.x + 6, y: objApex.y))
+        }
+        return Self.triangle(objStart, objCornerA, objCornerB, contains: objPoint)
+    }
+
+    /// Waits while the cursor keeps moving toward the picker; returns once it
+    /// leaves the triangle, rests in place, enters the picker, or time runs out.
+    private func waitWhileHeadingToPicker() async {
+        let objDeadline = ContinuousClock.now + Self.objIntentMaxWait
+        var objLastPoint = NSEvent.mouseLocation
+        var objLastMove = ContinuousClock.now
+
+        while !Task.isCancelled, ContinuousClock.now < objDeadline {
+            let objPoint = NSEvent.mouseLocation
+            guard !objPicker.blnMouseInside, isHeadingToPicker(objPoint) else { return }
+            if hypot(objPoint.x - objLastPoint.x, objPoint.y - objLastPoint.y) > 1 {
+                objLastPoint = objPoint
+                objLastMove = .now
+            } else if ContinuousClock.now - objLastMove >= Self.objIntentRestTime {
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+    }
+
+    /// Point-in-triangle test (sign of the cross products).
+    /// - Parameters:
+    ///   - objA: First vertex.
+    ///   - objB: Second vertex.
+    ///   - objC: Third vertex.
+    ///   - objPoint: Point to test.
+    /// - Returns: `true` if the point is inside or on an edge.
+    private static func triangle(_ objA: CGPoint, _ objB: CGPoint, _ objC: CGPoint, contains objPoint: CGPoint) -> Bool {
+        /// Cross product sign of (q - p) × (r - p).
+        func cross(_ objP: CGPoint, _ objQ: CGPoint, _ objR: CGPoint) -> CGFloat {
+            (objQ.x - objP.x) * (objR.y - objP.y) - (objQ.y - objP.y) * (objR.x - objP.x)
+        }
+        let fltD1 = cross(objA, objB, objPoint)
+        let fltD2 = cross(objB, objC, objPoint)
+        let fltD3 = cross(objC, objA, objPoint)
+        let blnHasNegative = fltD1 < 0 || fltD2 < 0 || fltD3 < 0
+        let blnHasPositive = fltD1 > 0 || fltD2 > 0 || fltD3 > 0
+        return !(blnHasNegative && blnHasPositive)
+    }
+
     /// Hides the picker immediately and cancels pending hover work.
     private func hidePicker() {
         objShowPickerTask?.cancel()
         objHidePickerTask?.cancel()
         objPicker.hide()
+        objPickerPathStart = nil
         removeOutsideClickMonitor()
     }
 
