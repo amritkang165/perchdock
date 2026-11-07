@@ -1,0 +1,40 @@
+name: MacDock
+options:
+  bundleIdPrefix: com.slynck
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+targets:
+  MacDock:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/MacDock
+    info:
+      path: Sources/MacDock/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: MacDock
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: "15.0"
+        # Agent app: no icon in the native Dock and no menu bar of its own.
+        LSUIElement: true
+    entitlements:
+      path: Sources/MacDock/Resources/MacDock.entitlements
+      properties:
+        # Accessibility APIs are unavailable inside the App Sandbox.
+        com.apple.security.app-sandbox: false
+    settings:
+      base:
+        PRODUCT_NAME: MacDock
+        PRODUCT_BUNDLE_IDENTIFIER: com.slynck.macdock
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        GENERATE_INFOPLIST_FILE: NO
