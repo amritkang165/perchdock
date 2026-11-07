@@ -85,6 +85,15 @@ final class WindowService {
         }
     }
 
+    /// Closes a window by pressing its close button, exactly as a user click would
+    /// (so apps still get to ask "save changes?").
+    /// - Parameter objWindow: Window to close; ignored if it has no AX handle.
+    func close(_ objWindow: WindowInfo) {
+        guard let objElement = objWindow.objElement,
+              let objCloseButton: AXUIElement = attribute(objElement, kAXCloseButtonAttribute) else { return }
+        AXUIElementPerformAction(objCloseButton, kAXPressAction as CFString)
+    }
+
     /// Launches an app, or "reopens" it if running (same as clicking it in the native Dock,
     /// which makes most apps open a new window when they have none).
     /// - Parameter objUrl: Location of the `.app` bundle.

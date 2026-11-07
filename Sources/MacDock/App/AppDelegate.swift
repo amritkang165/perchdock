@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let objAppTracker = AppTracker()
     private let objWindowService = WindowService()
+    private let objThumbnailService = ThumbnailService()
     private let objNativeDock = NativeDockController()
     private var objDockController: DockController?
     private var objStatusItem: NSStatusItem?
@@ -24,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Ask for Accessibility up front; window listing/raising needs it.
         AccessibilityPermission.requestIfNeeded()
+        // Previews need Screen Recording; ask early since macOS applies it only after a relaunch.
+        objThumbnailService.requestPermissionIfNeeded()
 
         // Reconcile the native Dock with the saved preference. This also repairs
         // the case where a previous run was force-quit while the Dock was hidden.
@@ -35,7 +38,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         objAppTracker.start()
 
-        let objController = DockController(objTracker: objAppTracker, objWindowService: objWindowService)
+        let objController = DockController(
+            objTracker: objAppTracker,
+            objWindowService: objWindowService,
+            objThumbnailService: objThumbnailService
+        )
         objController.show()
         objDockController = objController
 
@@ -81,6 +88,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         objPermissionItem.target = self
         objMenu.addItem(objPermissionItem)
 
+        let objScreenItem = NSMenuItem(title: "Screen Recording Settings… (previews)", action: #selector(openScreenRecordingSettings), keyEquivalent: "")
+        objScreenItem.target = self
+        objMenu.addItem(objScreenItem)
+
         objMenu.addItem(.separator())
 
         let objQuitItem = NSMenuItem(title: "Quit MacDock", action: #selector(quit), keyEquivalent: "q")
@@ -105,6 +116,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Opens System Settings at Privacy & Security → Accessibility.
     @objc private func openAccessibilitySettings() {
         AccessibilityPermission.openSystemSettings()
+    }
+
+    /// Opens System Settings at Privacy & Security → Screen Recording, which window previews need.
+    @objc private func openScreenRecordingSettings() {
+        if let objUrl = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(objUrl)
+        }
     }
 
     /// Quits MacDock (the termination hook restores the native Dock).

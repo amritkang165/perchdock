@@ -19,7 +19,7 @@ final class DockController {
     private let objState = DockState()
     private let objPanel: DockPanel
     private let objHostingView: TrackingHostingView<DockView>
-    private let objPicker = WindowPickerController()
+    private let objPicker: WindowPickerController
 
     private var objShowPickerTask: Task<Void, Never>?
     private var objHidePickerTask: Task<Void, Never>?
@@ -30,9 +30,11 @@ final class DockController {
     /// - Parameters:
     ///   - objTracker: Source of dock items.
     ///   - objWindowService: Window listing and raising.
-    init(objTracker: AppTracker, objWindowService: WindowService) {
+    ///   - objThumbnailService: Window thumbnails for the picker.
+    init(objTracker: AppTracker, objWindowService: WindowService, objThumbnailService: ThumbnailService) {
         self.objTracker = objTracker
         self.objWindowService = objWindowService
+        objPicker = WindowPickerController(objThumbnailService: objThumbnailService)
 
         objPanel = DockPanel(contentRect: .zero)
         objHostingView = TrackingHostingView(rootView: DockView(objTracker: objTracker, objState: objState))
@@ -50,6 +52,9 @@ final class DockController {
         }
         objPicker.onSelectWindow = { [weak self] objWindow in
             self?.handlePickerSelection(objWindow)
+        }
+        objPicker.onCloseWindow = { [weak self] objWindow in
+            self?.handlePickerClose(objWindow)
         }
 
         objTracker.onItemsChanged = { [weak self] in
@@ -212,6 +217,7 @@ final class DockController {
 
         objPicker.show(
             strAppName: objItem.strName,
+            objAppIcon: objItem.objIcon,
             arrObjWindows: arrObjResolved,
             intAnchorIndex: intIndex,
             objAnchorPoint: anchorPoint(forIndex: intIndex)
@@ -238,6 +244,20 @@ final class DockController {
 
         hidePicker()
         objWindowService.raise(objWindow, of: objApp)
+    }
+
+    /// Closes a window from the picker, then refreshes the picker (or hides it if none remain).
+    /// - Parameter objWindow: Window to close.
+    private func handlePickerClose(_ objWindow: WindowInfo) {
+        guard let intIndex = objPicker.intAnchorIndex else { return }
+        objWindowService.close(objWindow)
+
+        // Give the app a moment to actually close it (or show a save sheet).
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard let self, self.objPicker.intAnchorIndex == intIndex else { return }
+            self.showPicker(forIndex: intIndex, arrObjWindows: nil)
+        }
     }
 
     /// Hides the picker after a short grace period unless the mouse returns to it or the dock.
