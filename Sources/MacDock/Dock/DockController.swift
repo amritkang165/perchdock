@@ -63,6 +63,8 @@ final class DockController {
     private var objGlobalMiddleMonitor: Any?
     private var dblLastMiddleTimestamp: TimeInterval = -1
     private var objScreenObserver: NSObjectProtocol?
+    /// Sleep/wake, lock and desktop-switch observers.
+    private var arrObjSystemObservers: [NSObjectProtocol] = []
 
     // Auto-hide.
     private var blnShown = true
@@ -194,6 +196,63 @@ final class DockController {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.layoutPanel(blnAnimated: false) }
         }
+        observeSystemEvents()
+    }
+
+    /// Keeps transient UI from going stale across sleep, screen lock and desktop switches.
+    ///
+    /// Previews, popovers and peeks show a snapshot of windows on the current desktop;
+    /// after any of these events they'd point at the wrong windows (and a peek's live
+    /// stream would keep running), so they're closed. On wake, displays may have
+    /// changed while asleep, so the dock is re-placed and its items re-read.
+    private func observeSystemEvents() {
+        let objCenter = NSWorkspace.shared.notificationCenter
+
+        // Going away: sleep, display sleep, screen lock / fast user switching.
+        let arrObjDismissEvents: [Notification.Name] = [
+            NSWorkspace.willSleepNotification,
+            NSWorkspace.screensDidSleepNotification,
+            NSWorkspace.sessionDidResignActiveNotification,
+            NSWorkspace.activeSpaceDidChangeNotification,
+        ]
+        for objName in arrObjDismissEvents {
+            arrObjSystemObservers.append(objCenter.addObserver(forName: objName, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.dismissTransientUI() }
+            })
+        }
+
+        // Coming back: re-dock and refresh (apps may have quit, displays may differ).
+        let arrObjReturnEvents: [Notification.Name] = [
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ]
+        for objName in arrObjReturnEvents {
+            arrObjSystemObservers.append(objCenter.addObserver(forName: objName, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.objTracker.rebuild()
+                    self.layoutPanel(blnAnimated: false)
+                    self.handleMouse(at: NSEvent.mouseLocation)
+                }
+            })
+        }
+    }
+
+    /// Closes previews, peeks, popovers and the hover label, and cancels a drag.
+    private func dismissTransientUI() {
+        hidePicker()
+        objGrid.hide()
+        objHoverLabel.hide()
+        if objState.objDrag != nil {
+            objDragIcon.vanish()
+            objState.objDrag = nil
+            objPressPoint = nil
+            intPressIndex = nil
+        }
+        objState.intHoveredIndex = nil
+        objState.fltMouseMain = nil
+        updateAutoHide()
     }
 
     /// Re-lays out the panel whenever a geometry or auto-hide setting changes.

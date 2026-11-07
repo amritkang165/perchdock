@@ -28,6 +28,9 @@ final class NativeDockController {
     private static let strSnapshotKey = "NativeDockSnapshot"
     private static let fltHiddenDelay: Double = 1000
 
+    /// Background shell that restores the Dock if MacDock dies without quitting cleanly.
+    private var objWatchdog: Process?
+
     /// True when we've hidden the Dock and still hold the user's original values.
     var blnIsHiddenByUs: Bool {
         UserDefaults.standard.data(forKey: Self.strSnapshotKey) != nil
@@ -50,6 +53,8 @@ final class NativeDockController {
             saveSnapshot(objCurrent)
         }
 
+        startWatchdog()
+
         // Skip the Dock restart if it's already in the hidden state.
         let blnAlreadyHidden = objCurrent.blnAutohide == true
             && objCurrent.fltAutohideDelay == Self.fltHiddenDelay
@@ -68,6 +73,7 @@ final class NativeDockController {
 
     /// Restores the user's original native Dock values and forgets the snapshot.
     func restore() {
+        stopWatchdog()
         guard let objSnapshot = loadSnapshot() else { return }
 
         applyOriginal("autohide", objValue: objSnapshot.blnAutohide.map { ["-bool", $0 ? "true" : "false"] })
@@ -78,6 +84,60 @@ final class NativeDockController {
 
         UserDefaults.standard.removeObject(forKey: Self.strSnapshotKey)
         restartDock()
+    }
+
+    // MARK: - Crash safety
+
+    /// Starts a detached shell that waits for MacDock to exit and, if the Dock is
+    /// still hidden by us (a crash or force quit skipped `restore()`), puts the
+    /// user's original values back so they're never left without a dock.
+    ///
+    /// The shell outlives MacDock (it's reparented to launchd) and does nothing
+    /// after a clean quit, because `restore()` stops it and clears the snapshot.
+    private func startWatchdog() {
+        guard objWatchdog?.isRunning != true, let objSnapshot = loadSnapshot() else { return }
+        let strDomain = Self.strDockDomain
+        let strOwnDomain = Bundle.main.bundleIdentifier ?? "com.slynck.macdock"
+
+        /// `defaults` command restoring one key (or deleting it if it was unset).
+        func restoreCommand(_ strKey: String, _ strTypedValue: String?) -> String {
+            strTypedValue.map { "/usr/bin/defaults write \(strDomain) \(strKey) \($0)" }
+                ?? "/usr/bin/defaults delete \(strDomain) \(strKey) 2>/dev/null"
+        }
+        let arrStrRestore = [
+            restoreCommand("autohide", objSnapshot.blnAutohide.map { "-bool \($0)" }),
+            restoreCommand("autohide-delay", objSnapshot.fltAutohideDelay.map { "-float \($0)" }),
+            restoreCommand("autohide-time-modifier", objSnapshot.fltAutohideTimeModifier.map { "-float \($0)" }),
+            restoreCommand("launchanim", objSnapshot.blnLaunchAnim.map { "-bool \($0)" }),
+            restoreCommand("no-bouncing", objSnapshot.blnNoBouncing.map { "-bool \($0)" }),
+        ]
+
+        // Poll our PID; once it's gone, restore only if the snapshot is still there.
+        let strScript = """
+        while /bin/kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do /bin/sleep 2; done
+        if /usr/bin/defaults read \(strOwnDomain) \(Self.strSnapshotKey) >/dev/null 2>&1; then
+          \(arrStrRestore.joined(separator: "\n  "))
+          /usr/bin/defaults delete \(strOwnDomain) \(Self.strSnapshotKey)
+          /usr/bin/killall Dock
+        fi
+        """
+        let objProcess = Process()
+        objProcess.executableURL = URL(fileURLWithPath: "/bin/sh")
+        objProcess.arguments = ["-c", strScript]
+        objProcess.standardOutput = FileHandle.nullDevice
+        objProcess.standardError = FileHandle.nullDevice
+        do {
+            try objProcess.run()
+            objWatchdog = objProcess
+        } catch {
+            NSLog("MacDock: couldn't start the Dock watchdog: \(error)")
+        }
+    }
+
+    /// Stops the watchdog (the Dock is being restored normally).
+    private func stopWatchdog() {
+        if objWatchdog?.isRunning == true { objWatchdog?.terminate() }
+        objWatchdog = nil
     }
 
     // MARK: - Preferences I/O
