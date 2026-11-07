@@ -191,7 +191,7 @@ struct NowPlayingLargeView: View {
             RoundedRectangle(cornerRadius: fltCorner, style: .continuous)
                 .fill(Color(white: 0.08).opacity(0.97))
 
-            NowPlayingTileView(objNowPlaying: objNowPlaying, fltSize: objLayout.objArtwork.width, blnShowsState: false)
+            NowPlayingTileView(objNowPlaying: objNowPlaying, fltSize: objLayout.objArtwork.width)
                 .frame(width: objLayout.objArtwork.width, height: objLayout.objArtwork.height)
 
             MarqueeText(strText: objTrack?.strTitle ?? "Not Playing",

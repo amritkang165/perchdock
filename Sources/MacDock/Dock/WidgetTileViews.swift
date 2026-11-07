@@ -1,46 +1,76 @@
 import SwiftUI
 
-/// Now Playing tile: the track's artwork (or the playing app's icon), with animated
-/// bars while playing and a play glyph while paused.
+/// Now Playing tile: the track's artwork (or the playing app's icon). Playing art is
+/// full color with a breathing glow and bouncing bars; paused art shrinks back, dims,
+/// and shows a pause badge.
 struct NowPlayingTileView: View {
     let objNowPlaying: NowPlayingService
     let fltSize: CGFloat
-    /// Show the playing/paused glyph (the large player has its own play button).
-    var blnShowsState = true
     /// Show a thin progress line along the bottom instead of the glyph (side-dock tile with a fly-out player).
     var blnShowsProgress = false
 
     var body: some View {
         let fltCorner = fltSize * 0.22
+        let blnPlaying = objNowPlaying.blnIsPlaying
         ZStack {
-            artwork
-                .frame(width: fltSize, height: fltSize)
-                .clipShape(RoundedRectangle(cornerRadius: fltCorner, style: .continuous))
-                // Paused tracks look a little "off".
-                .saturation(objNowPlaying.blnIsPlaying ? 1 : 0.55)
-
-            if blnShowsProgress {
-                progressLine
-            } else if blnShowsState {
-                // State glyph in the bottom-left corner.
-                VStack {
-                    Spacer()
-                    HStack {
-                        stateGlyph
-                            .frame(width: fltSize * 0.34, height: fltSize * 0.34)
-                            .background(Circle().fill(.black.opacity(0.55)))
-                        Spacer()
-                    }
-                }
-                .padding(fltSize * 0.07)
+            // Playing: a soft glow of the artwork itself breathes behind the tile.
+            if blnPlaying {
+                ArtworkGlow(fltSize: fltSize, fltCorner: fltCorner) { artwork }
+                    .transition(.opacity)
             }
+
+            ZStack {
+                artwork
+                    .frame(width: fltSize, height: fltSize)
+                    .clipShape(RoundedRectangle(cornerRadius: fltCorner, style: .continuous))
+                    // Paused tracks go dim and grey, so the state reads at a glance.
+                    .saturation(blnPlaying ? 1 : 0.15)
+                    .brightness(blnPlaying ? 0 : -0.22)
+
+                if blnShowsProgress {
+                    progressLine
+                }
+
+                if blnPlaying {
+                    // Playing: bouncing bars in a corner (top-right when the progress line owns the bottom).
+                    stateBadge(alignment: blnShowsProgress ? .topTrailing : .bottomLeading) {
+                        EqualizerBars().padding(fltSize * 0.08)
+                    }
+                } else {
+                    // Paused: a centered pause badge over the dimmed art.
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: fltSize * 0.2, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: fltSize * 0.42, height: fltSize * 0.42)
+                        .background(Circle().fill(.black.opacity(0.5)))
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
+            }
+            .frame(width: fltSize, height: fltSize)
+            .overlay(
+                RoundedRectangle(cornerRadius: fltCorner, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+            // Paused art settles back slightly; playing art sits forward.
+            .scaleEffect(blnPlaying ? 1 : 0.9)
         }
         .frame(width: fltSize, height: fltSize)
-        .overlay(
-            RoundedRectangle(cornerRadius: fltCorner, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+        .animation(.spring(duration: 0.35, bounce: 0.25), value: blnPlaying)
+    }
+
+    /// Small dark circular badge pinned to one corner of the tile.
+    /// - Parameters:
+    ///   - enmAlignment: Corner to pin to.
+    ///   - fnContent: Badge content.
+    /// - Returns: The badge, padded in from the edge.
+    private func stateBadge(alignment enmAlignment: Alignment, @ViewBuilder _ fnContent: () -> some View) -> some View {
+        fnContent()
+            .frame(width: fltSize * 0.34, height: fltSize * 0.34)
+            .background(Circle().fill(.black.opacity(0.55)))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: enmAlignment)
+            .padding(fltSize * 0.07)
+            .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 
     /// Cover art; without it, the playing app's icon on a soft blurred backdrop.
@@ -86,20 +116,6 @@ struct NowPlayingTileView: View {
         }
     }
 
-    /// Equalizer bars while playing, a play triangle while paused.
-    @ViewBuilder
-    private var stateGlyph: some View {
-        if objNowPlaying.blnIsPlaying {
-            EqualizerBars()
-                .padding(fltSize * 0.08)
-        } else {
-            Image(systemName: "play.fill")
-                .font(.system(size: fltSize * 0.15, weight: .bold))
-                .foregroundStyle(.white)
-                .offset(x: fltSize * 0.01)
-        }
-    }
-
     /// Icon of the app playing (falls back to a music note).
     /// - Parameter strBundleId: Bundle ID, if known.
     /// - Returns: Icon.
@@ -108,6 +124,29 @@ struct NowPlayingTileView: View {
             return NSWorkspace.shared.icon(forFile: objUrl.path)
         }
         return NSImage(systemSymbolName: "music.note", accessibilityDescription: "Now Playing") ?? NSImage()
+    }
+}
+
+/// Blurred copy of the artwork behind the tile whose glow slowly breathes in and out,
+/// a calm "this is playing" cue. Only exists while playing, so it never ticks when paused.
+private struct ArtworkGlow<Content: View>: View {
+    let fltSize: CGFloat
+    let fltCorner: CGFloat
+    @ViewBuilder let fnArtwork: () -> Content
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 15)) { objContext in
+            // A ~3 s breathing cycle between dim and bright.
+            let dblPhase = (sin(objContext.date.timeIntervalSinceReferenceDate * 2 * .pi / 3) + 1) / 2
+            fnArtwork()
+                .frame(width: fltSize, height: fltSize)
+                .clipShape(RoundedRectangle(cornerRadius: fltCorner, style: .continuous))
+                .blur(radius: fltSize * 0.14)
+                .saturation(1.6)
+                .opacity(0.35 + 0.4 * dblPhase)
+                .scaleEffect(1.0 + 0.06 * dblPhase)
+        }
+        .allowsHitTesting(false)
     }
 }
 
