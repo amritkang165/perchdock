@@ -32,17 +32,27 @@ enum PrivateWindowAPI {
     private static let fnMainConnection: MainConnectionFn? = symbol("SLSMainConnectionID", objHandle: objSkyLight)
     private static let fnCopySpacesForWindows: CopySpacesForWindowsFn? = symbol("SLSCopySpacesForWindows", objHandle: objSkyLight)
 
-    /// Whether a window belongs to any Space. Real windows on other desktops do;
-    /// hidden helper windows and closed-but-cached windows don't.
+    private typealias GetActiveSpaceFn = @convention(c) (Int32) -> UInt64
+    private static let fnGetActiveSpace: GetActiveSpaceFn? = symbol("SLSGetActiveSpace", objHandle: objSkyLight)
+
+    /// Spaces a window belongs to. Real windows on other desktops have one;
+    /// hidden helper windows and closed-but-cached windows have none.
     /// - Parameter intWindowId: Window to check.
-    /// - Returns: `true` if it lives on a Space, `nil` if the API is unavailable.
-    static func isOnAnySpace(_ intWindowId: CGWindowID) -> Bool? {
+    /// - Returns: Space IDs, or `nil` if the API is unavailable.
+    static func spaces(for intWindowId: CGWindowID) -> [UInt64]? {
         guard let fnMainConnection, let fnCopySpacesForWindows else { return nil }
         let arrObjIds = [NSNumber(value: intWindowId)] as CFArray
         guard let objResult = fnCopySpacesForWindows(fnMainConnection(), intAllSpacesMask, arrObjIds)?.takeRetainedValue() else {
-            return false
+            return []
         }
-        return CFArrayGetCount(objResult) > 0
+        return (objResult as? [NSNumber])?.map(\.uint64Value) ?? []
+    }
+
+    /// ID of the Space currently shown on the active display.
+    /// - Returns: Space ID, or `nil` if the API is unavailable.
+    static func activeSpace() -> UInt64? {
+        guard let fnMainConnection, let fnGetActiveSpace else { return nil }
+        return fnGetActiveSpace(fnMainConnection())
     }
 
     /// Maps an AX window element to its window-server ID.

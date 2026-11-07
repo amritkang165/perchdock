@@ -1,5 +1,9 @@
 import AppKit
 import ApplicationServices
+import os
+
+/// Window-discovery diagnostics: `log stream --predicate 'subsystem == "com.slynck.macdock"'`.
+private let objLogger = Logger(subsystem: "com.slynck.macdock", category: "windows")
 
 /// A single top-level window belonging to an app.
 struct WindowInfo: Identifiable {
@@ -27,11 +31,15 @@ final class WindowService {
     /// - Parameter objApp: The running application.
     /// - Returns: Its windows, or an empty array without Accessibility permission.
     func windows(for objApp: NSRunningApplication) -> [WindowInfo] {
-        guard AccessibilityPermission.blnIsTrusted else { return [] }
+        guard AccessibilityPermission.blnIsTrusted else {
+            objLogger.debug("Not trusted for Accessibility; no windows listed")
+            return []
+        }
 
-        let arrObjCurrentSpace = currentSpaceWindows(for: objApp)
-        let setIntKnownIds = Set(arrObjCurrentSpace.compactMap(\.intWindowId))
-        let arrObjOtherSpaces = otherSpaceWindows(for: objApp, excluding: setIntKnownIds)
+        var setIntSeenByAX = Set<CGWindowID>()
+        let arrObjCurrentSpace = currentSpaceWindows(for: objApp, setIntSeenIds: &setIntSeenByAX)
+        // Anything AX reported (even popups we filtered out) is on this Space, not another.
+        let arrObjOtherSpaces = otherSpaceWindows(for: objApp, excluding: setIntSeenByAX)
 
         return arrObjCurrentSpace + arrObjOtherSpaces
     }
@@ -67,7 +75,9 @@ final class WindowService {
             Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(350))
                 guard let self else { return }
-                let objMatch = self.currentSpaceWindows(for: objApp).first { $0.intWindowId == intWindowId }
+                var setIntIgnored = Set<CGWindowID>()
+                let objMatch = self.currentSpaceWindows(for: objApp, setIntSeenIds: &setIntIgnored)
+                    .first { $0.intWindowId == intWindowId }
                 if let objElement = objMatch?.objElement {
                     self.axRaise(objElement)
                 }
@@ -87,33 +97,47 @@ final class WindowService {
     // MARK: - Listing
 
     /// Standard windows on the current Space (including minimized ones), via AX.
-    /// - Parameter objApp: The running application.
+    /// - Parameters:
+    ///   - objApp: The running application.
+    ///   - setIntSeenIds: Receives the IDs of every AX window, including filtered-out popups.
     /// - Returns: Windows in front-to-back order.
-    private func currentSpaceWindows(for objApp: NSRunningApplication) -> [WindowInfo] {
+    private func currentSpaceWindows(for objApp: NSRunningApplication, setIntSeenIds: inout Set<CGWindowID>) -> [WindowInfo] {
         let objAxApp = AXUIElementCreateApplication(objApp.processIdentifier)
         // Keep a hung app from stalling the dock.
         AXUIElementSetMessagingTimeout(objAxApp, 0.5)
 
-        guard let arrObjElements: [AXUIElement] = attribute(objAxApp, kAXWindowsAttribute) else { return [] }
+        var objRawValue: CFTypeRef?
+        let objError = AXUIElementCopyAttributeValue(objAxApp, kAXWindowsAttribute as CFString, &objRawValue)
+        guard objError == .success, let arrObjElements = objRawValue as? [AXUIElement] else {
+            objLogger.debug("\(objApp.localizedName ?? "?", privacy: .public): AXWindows failed (\(objError.rawValue))")
+            return []
+        }
 
-        return arrObjElements.compactMap { objElement in
-            // Skip sheets, panels, popovers and other non-document windows.
+        var arrObjResult: [WindowInfo] = []
+        for objElement in arrObjElements {
             let strSubrole: String? = attribute(objElement, kAXSubroleAttribute)
-            guard strSubrole == kAXStandardWindowSubrole else { return nil }
-
             let strTitle: String = attribute(objElement, kAXTitleAttribute) ?? ""
             let blnMinimized: Bool = attribute(objElement, kAXMinimizedAttribute) ?? false
             let intWindowId = PrivateWindowAPI.windowId(for: objElement)
+            if let intWindowId {
+                setIntSeenIds.insert(intWindowId)
+            }
 
-            return WindowInfo(
+            objLogger.debug("\(objApp.localizedName ?? "?", privacy: .public) AX window id=\(intWindowId ?? 0) subrole=\(strSubrole ?? "nil", privacy: .public) min=\(blnMinimized) title=\(strTitle, privacy: .public)")
+
+            // Skip sheets, panels, popovers and other non-document windows.
+            guard strSubrole == kAXStandardWindowSubrole else { continue }
+
+            arrObjResult.append(WindowInfo(
                 id: intWindowId.map(Int.init) ?? Int(bitPattern: CFHash(objElement)),
                 strTitle: strTitle.isEmpty ? (objApp.localizedName ?? "Untitled") : strTitle,
                 blnIsMinimized: blnMinimized,
                 blnIsOnOtherSpace: false,
                 intWindowId: intWindowId,
                 objElement: objElement
-            )
+            ))
         }
+        return arrObjResult
     }
 
     /// Windows on other Spaces, which AX doesn't report, via the window server list.
@@ -125,6 +149,7 @@ final class WindowService {
     private func otherSpaceWindows(for objApp: NSRunningApplication, excluding setIntKnownIds: Set<CGWindowID>) -> [WindowInfo] {
         let objOptions: CGWindowListOption = [.optionAll, .excludeDesktopElements]
         guard let arrDictWindows = CGWindowListCopyWindowInfo(objOptions, kCGNullWindowID) as? [[String: Any]] else { return [] }
+        let intActiveSpace = PrivateWindowAPI.activeSpace()
 
         return arrDictWindows.compactMap { dictWindow in
             guard (dictWindow[kCGWindowOwnerPID as String] as? pid_t) == objApp.processIdentifier,
@@ -139,8 +164,12 @@ final class WindowService {
             guard (dictBounds["Width"] ?? 0) >= Self.fltMinWindowSide,
                   (dictBounds["Height"] ?? 0) >= Self.fltMinWindowSide else { return nil }
 
-            // Must live on some Space; this drops hidden and cached-but-closed windows.
-            guard PrivateWindowAPI.isOnAnySpace(intWindowId) == true else { return nil }
+            // Must live on some Space (drops hidden and cached-but-closed windows),
+            // and not the visible one (AX already covers that Space).
+            let arrIntSpaces = PrivateWindowAPI.spaces(for: intWindowId) ?? []
+            objLogger.debug("\(objApp.localizedName ?? "?", privacy: .public) CG candidate id=\(intWindowId) spaces=\(arrIntSpaces, privacy: .public)")
+            guard !arrIntSpaces.isEmpty else { return nil }
+            if let intActiveSpace, arrIntSpaces.contains(intActiveSpace) { return nil }
 
             let strTitle = (dictWindow[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 }
                 ?? "\(objApp.localizedName ?? "Window") — other desktop"

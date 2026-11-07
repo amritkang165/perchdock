@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 /// Owns the app's long-lived services and the menu bar status item.
 @MainActor
@@ -39,6 +40,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         objDockController = objController
 
         buildStatusItem()
+
+        // Debug aid: `open MacDock.app --args --dump-windows` logs every app's windows.
+        if CommandLine.arguments.contains("--dump-windows") {
+            let objLogger = Logger(subsystem: "com.slynck.macdock", category: "dump")
+            for objItem in objAppTracker.arrObjItems {
+                guard let objApp = objItem.objRunningApp else { continue }
+                let arrStrTitles = objWindowService.windows(for: objApp).map {
+                    $0.strTitle + ($0.blnIsOnOtherSpace ? " [other desktop]" : "") + ($0.blnIsMinimized ? " [minimized]" : "")
+                }
+                objLogger.notice("\(objItem.strName, privacy: .public): \(arrStrTitles, privacy: .public)")
+            }
+        }
     }
 
     /// Restores the native Dock on a normal quit so the user is never left without one.
