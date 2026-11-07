@@ -206,6 +206,7 @@ final class SettingsStore {
         static let strIndicatorStyle = "IndicatorStyle"
         static let strAddedDownloads = "DidAddDownloadsStack"
         static let strTrailingPinned = "TrailingPinned"
+        static let strCurrentDesktopOnly = "CurrentDesktopOnly"
     }
 
     /// Pins used on first launch.
@@ -266,6 +267,9 @@ final class SettingsStore {
 
     /// Whether live previews drop to 30 fps on battery or in Low Power Mode.
     var blnReducePreviewsOnBattery: Bool { didSet { objDefaults.set(blnReducePreviewsOnBattery, forKey: Key.strReducePreviewsOnBattery) } }
+
+    /// Whether window previews leave out windows on other desktops.
+    var blnCurrentDesktopOnly: Bool { didSet { objDefaults.set(blnCurrentDesktopOnly, forKey: Key.strCurrentDesktopOnly) } }
 
     /// Which display the dock lives on.
     var enmDisplayMode: DockDisplayMode { didSet { objDefaults.set(enmDisplayMode.rawValue, forKey: Key.strDisplayMode) } }
@@ -352,6 +356,7 @@ final class SettingsStore {
         blnLivePreviews = objDefaults.bool(forKey: Key.strLivePreviews)
         blnReducePreviewsOnBattery = objDefaults.bool(forKey: Key.strReducePreviewsOnBattery)
         enmDisplayMode = DockDisplayMode(rawValue: objDefaults.string(forKey: Key.strDisplayMode) ?? "") ?? .main
+        blnCurrentDesktopOnly = objDefaults.bool(forKey: Key.strCurrentDesktopOnly)
         dictObjGroups = objDefaults.data(forKey: Key.strGroups)
             .flatMap { try? JSONDecoder().decode([String: DockGroup].self, from: $0) } ?? [:]
         blnShowTrash = objDefaults.bool(forKey: Key.strShowTrash)

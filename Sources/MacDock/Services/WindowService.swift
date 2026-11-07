@@ -157,6 +157,87 @@ final class WindowService {
         AXUIElementPerformAction(objCloseButton, kAXPressAction as CFString)
     }
 
+    // MARK: - Tiling
+
+    /// Where to put a window.
+    enum Tile {
+        case leftHalf
+        case rightHalf
+        case fill
+        /// Same size (shrunk to fit if needed), centered on another display.
+        case display(NSScreen)
+    }
+
+    /// Moves and resizes a window, then raises it.
+    /// - Parameters:
+    ///   - objWindow: Window (on this desktop).
+    ///   - objApp: Its app.
+    ///   - enmTile: Target layout.
+    func tile(_ objWindow: WindowInfo, of objApp: NSRunningApplication, to enmTile: Tile) {
+        guard let objElement = axElement(for: objWindow) else { return }
+        if objWindow.blnIsMinimized {
+            AXUIElementSetAttributeValue(objElement, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        }
+
+        // AX uses a top-left origin at the primary display's top; AppKit a bottom-left one.
+        let fltPrimaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let objCurrent = axFrame(of: objElement).map {
+            CGRect(x: $0.minX, y: fltPrimaryHeight - $0.maxY, width: $0.width, height: $0.height)
+        }
+
+        // The display the window is mostly on (by its center).
+        let objHome = objCurrent.flatMap { objFrame in
+            NSScreen.screens.first { $0.frame.contains(CGPoint(x: objFrame.midX, y: objFrame.midY)) }
+        } ?? NSScreen.main
+        guard let objHome else { return }
+
+        let objTarget: CGRect
+        switch enmTile {
+        case .leftHalf:
+            let objVisible = objHome.visibleFrame
+            objTarget = CGRect(x: objVisible.minX, y: objVisible.minY, width: (objVisible.width / 2).rounded(), height: objVisible.height)
+        case .rightHalf:
+            let objVisible = objHome.visibleFrame
+            let fltWidth = (objVisible.width / 2).rounded()
+            objTarget = CGRect(x: objVisible.maxX - fltWidth, y: objVisible.minY, width: fltWidth, height: objVisible.height)
+        case .fill:
+            objTarget = objHome.visibleFrame
+        case .display(let objScreen):
+            let objVisible = objScreen.visibleFrame
+            let objSize = CGSize(width: min(objCurrent?.width ?? objVisible.width, objVisible.width),
+                                 height: min(objCurrent?.height ?? objVisible.height, objVisible.height))
+            objTarget = CGRect(x: objVisible.midX - objSize.width / 2, y: objVisible.midY - objSize.height / 2,
+                               width: objSize.width, height: objSize.height)
+        }
+
+        // Back to AX coordinates. Size first (so the move isn't clamped by the old
+        // size), then position, then size again (the new display may have limited it).
+        var objPosition = CGPoint(x: objTarget.minX, y: fltPrimaryHeight - objTarget.maxY)
+        var objSize = objTarget.size
+        if let objSizeValue = AXValueCreate(.cgSize, &objSize), let objPositionValue = AXValueCreate(.cgPoint, &objPosition) {
+            AXUIElementSetAttributeValue(objElement, kAXSizeAttribute as CFString, objSizeValue)
+            AXUIElementSetAttributeValue(objElement, kAXPositionAttribute as CFString, objPositionValue)
+            AXUIElementSetAttributeValue(objElement, kAXSizeAttribute as CFString, objSizeValue)
+        }
+        raise(objWindow, of: objApp)
+    }
+
+    /// A window's frame in AX coordinates (top-left origin).
+    /// - Parameter objElement: AX window.
+    /// - Returns: Frame, or `nil` if unreadable.
+    private func axFrame(of objElement: AXUIElement) -> CGRect? {
+        var objPositionRef: CFTypeRef?
+        var objSizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(objElement, kAXPositionAttribute as CFString, &objPositionRef) == .success,
+              AXUIElementCopyAttributeValue(objElement, kAXSizeAttribute as CFString, &objSizeRef) == .success,
+              let objPositionRef, let objSizeRef else { return nil }
+        var objPoint = CGPoint.zero
+        var objDimensions = CGSize.zero
+        AXValueGetValue(objPositionRef as! AXValue, .cgPoint, &objPoint)
+        AXValueGetValue(objSizeRef as! AXValue, .cgSize, &objDimensions)
+        return CGRect(origin: objPoint, size: objDimensions)
+    }
+
     // MARK: - Tabs
 
     /// One tab in a window's tab bar.

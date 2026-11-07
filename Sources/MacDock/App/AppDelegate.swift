@@ -147,6 +147,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runDebugArguments(_ objController: DockController) {
         let arrStrArgs = CommandLine.arguments
 
+        // `--tile=BUNDLE_ID,left|right|fill`: tiles that app's front window on this desktop.
+        if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--tile=") }) {
+            let arrStrParts = strArg.dropFirst("--tile=".count).split(separator: ",").map(String.init)
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                guard arrStrParts.count == 2,
+                      let objApp = NSRunningApplication.runningApplications(withBundleIdentifier: arrStrParts[0]).first,
+                      let objWindow = objWindowService.windows(for: objApp).first(where: { !$0.blnIsOnOtherSpace }) else { return }
+                let enmTile: WindowService.Tile = switch arrStrParts[1] {
+                case "left": .leftHalf
+                case "right": .rightHalf
+                default: .fill
+                }
+                objWindowService.tile(objWindow, of: objApp, to: enmTile)
+            }
+        }
         if arrStrArgs.contains("--cycle-pickers") {
             objController.debugCyclePickers(intRounds: 5)
         }

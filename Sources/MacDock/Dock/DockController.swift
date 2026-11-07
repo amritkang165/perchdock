@@ -1366,7 +1366,7 @@ final class DockController {
         }
 
         // Flag new windows and list them first, so the one an agent just opened is easy to spot.
-        let arrObjResolved = markNew(arrObjWindows ?? objWindowService.windows(for: objApp))
+        let arrObjResolved = markNew(previewWindows(arrObjWindows ?? objWindowService.windows(for: objApp)))
         guard !arrObjResolved.isEmpty else {
             hidePicker()
             return
@@ -1383,6 +1383,15 @@ final class DockController {
         )
         objPickerPathStart = NSEvent.mouseLocation
         installOutsideClickMonitor()
+    }
+
+    /// Windows to preview: all of them, or — with "Only show windows on this desktop" —
+    /// those on this desktop plus minimized ones (they belong to no desktop).
+    /// - Parameter arrObjWindows: An app's windows.
+    /// - Returns: Windows for the picker.
+    private func previewWindows(_ arrObjWindows: [WindowInfo]) -> [WindowInfo] {
+        guard objSettings.blnCurrentDesktopOnly else { return arrObjWindows }
+        return arrObjWindows.filter { !$0.blnIsOnOtherSpace || $0.blnIsMinimized }
     }
 
     /// Sets each window's "new" flag and moves new windows to the front (stable otherwise).
@@ -1475,6 +1484,9 @@ final class DockController {
         objMenu.addItem(ClosureMenuItem(objWindow.blnIsOnOtherSpace ? "Go to \(objWindow.strDesktopLabel ?? "Desktop")" : "Show") { [weak self] in
             self?.handlePickerSelection(objWindow)
         })
+        if !objWindow.blnIsOnOtherSpace {
+            objMenu.addItem(tileMenuItem(for: objWindow, of: objApp))
+        }
         objMenu.addItem(.separator())
         if !objWindow.blnIsMinimized, !objWindow.blnIsOnOtherSpace, let objElement = objWindow.objElement {
             objMenu.addItem(ClosureMenuItem("Minimize") { [weak self] in
@@ -1490,6 +1502,59 @@ final class DockController {
         objPicker.popUpMenu(objMenu)
         blnMenuOpen = false
         updateAutoHide()
+    }
+
+    /// "Move & Resize" submenu for a preview card: halves, fill, other displays.
+    /// - Parameters:
+    ///   - objWindow: Window on this desktop.
+    ///   - objApp: Its app.
+    /// - Returns: Menu item with the submenu.
+    private func tileMenuItem(for objWindow: WindowInfo, of objApp: NSRunningApplication) -> NSMenuItem {
+        let objSubmenu = NSMenu()
+
+        /// Adds one layout choice that tiles the window and closes the previews.
+        func add(_ strTitle: String, strSymbol: String, _ enmTile: WindowService.Tile) {
+            let objItem = ClosureMenuItem(strTitle) { [weak self] in
+                guard let self else { return }
+                if (self.objPicker.intAnchorIndex ?? 0) < 0 { self.objGrid.hide() }
+                self.hidePicker()
+                self.objWindowService.tile(objWindow, of: objApp, to: enmTile)
+            }
+            objItem.image = NSImage(systemSymbolName: strSymbol, accessibilityDescription: nil)
+            objSubmenu.addItem(objItem)
+        }
+
+        add("Left Half", strSymbol: "rectangle.lefthalf.filled", .leftHalf)
+        add("Right Half", strSymbol: "rectangle.righthalf.filled", .rightHalf)
+        add("Fill Screen", strSymbol: "rectangle.fill", .fill)
+
+        // Other displays, by name.
+        let arrObjOthers = NSScreen.screens.filter { $0 != screen(of: objWindow) }
+        if NSScreen.screens.count > 1, !arrObjOthers.isEmpty {
+            objSubmenu.addItem(.separator())
+            for objScreen in arrObjOthers {
+                add("Move to \(objScreen.localizedName)", strSymbol: "display", .display(objScreen))
+            }
+        }
+
+        let objItem = NSMenuItem(title: "Move & Resize", action: nil, keyEquivalent: "")
+        objItem.image = NSImage(systemSymbolName: "rectangle.split.2x1", accessibilityDescription: nil)
+        objItem.submenu = objSubmenu
+        return objItem
+    }
+
+    /// The display a window is mostly on, from the window server's bounds.
+    /// - Parameter objWindow: Window.
+    /// - Returns: Its screen, or `nil` if unknown.
+    private func screen(of objWindow: WindowInfo) -> NSScreen? {
+        guard let intWindowId = objWindow.intWindowId,
+              let dictInfo = (CGWindowListCopyWindowInfo([.optionIncludingWindow], intWindowId) as? [[String: Any]])?.first,
+              let dictBounds = dictInfo[kCGWindowBounds as String] as? [String: CGFloat] else { return nil }
+        // Window-server bounds use a top-left origin; convert the center to AppKit's.
+        let fltPrimaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let objCenter = CGPoint(x: (dictBounds["X"] ?? 0) + (dictBounds["Width"] ?? 0) / 2,
+                                y: fltPrimaryHeight - ((dictBounds["Y"] ?? 0) + (dictBounds["Height"] ?? 0) / 2))
+        return NSScreen.screens.first { $0.frame.contains(objCenter) }
     }
 
     /// Moves a window from another desktop onto this one and raises it: directly
@@ -1783,7 +1848,7 @@ final class DockController {
             hidePicker()
             return
         }
-        let arrObjWindows = markNew(objWindowService.windows(for: objApp))
+        let arrObjWindows = markNew(previewWindows(objWindowService.windows(for: objApp)))
         guard !arrObjWindows.isEmpty else {
             hidePicker()
             return
