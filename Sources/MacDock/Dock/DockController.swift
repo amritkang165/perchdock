@@ -1461,13 +1461,17 @@ final class DockController {
         return arrObjWindows.filter { !$0.blnIsOnOtherSpace || $0.blnIsMinimized }
     }
 
-    /// Sets each window's "new" flag and moves new windows to the front (stable otherwise).
+    /// Sets each window's "new" and "current" (frontmost on screen) flags, and moves
+    /// new windows to the front (stable otherwise).
     /// - Parameter arrObjWindows: Windows front to back.
     /// - Returns: Flagged and reordered windows.
     private func markNew(_ arrObjWindows: [WindowInfo]) -> [WindowInfo] {
+        let intFrontmostId = WindowService.frontmostWindowId()
         let arrObjFlagged = arrObjWindows.map { objWindow in
             var objCopy = objWindow
             objCopy.blnIsNew = objNewWindowTracker.isNew(objWindow.intWindowId)
+            objCopy.blnIsCurrent = intFrontmostId != nil && objWindow.intWindowId == intFrontmostId
+                && !objWindow.blnIsMinimized && !objWindow.blnIsOnOtherSpace
             return objCopy
         }
         return arrObjFlagged.filter(\.blnIsNew) + arrObjFlagged.filter { !$0.blnIsNew }
@@ -1770,7 +1774,8 @@ final class DockController {
     private func handlePeekHover(_ objWindow: WindowInfo?) {
         objPeekTask?.cancel()
         guard objSettings.blnPeek else { return }
-        guard let objWindow else {
+        // The window already in front has nothing to reveal; treat it like empty space.
+        guard let objWindow, !objWindow.blnIsCurrent else {
             // Linger briefly so crossing the gap between cards doesn't blink the peek off.
             objPeekTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(150))

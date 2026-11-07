@@ -16,6 +16,8 @@ struct WindowInfo: Identifiable {
     var strDesktopLabel: String? = nil
     /// Appeared recently and hasn't been looked at yet.
     var blnIsNew = false
+    /// The frontmost window on screen (what the user is looking at right now).
+    var blnIsCurrent = false
     /// AX handle; `nil` for windows on other Spaces, which AX can't see.
     let objElement: AXUIElement?
 }
@@ -32,6 +34,26 @@ final class WindowService {
 
     /// Fired after a window is raised (used to clear its "new" flag).
     var onRaised: ((CGWindowID) -> Void)?
+
+    /// The window currently in front of all others on this desktop: the topmost
+    /// normal-level window, ignoring MacDock's own panels and tiny helper windows.
+    /// - Returns: Its window ID, or `nil` if only the desktop is showing.
+    static func frontmostWindowId() -> CGWindowID? {
+        guard let arrDictWindows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        let intOwnPid = ProcessInfo.processInfo.processIdentifier
+        // The list is ordered front to back.
+        for dictWindow in arrDictWindows {
+            guard (dictWindow[kCGWindowLayer as String] as? Int) == 0,
+                  (dictWindow[kCGWindowOwnerPID as String] as? Int32) != intOwnPid,
+                  (dictWindow[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let dictBounds = dictWindow[kCGWindowBounds as String] as? [String: CGFloat],
+                  (dictBounds["Width"] ?? 0) >= fltMinWindowSide, (dictBounds["Height"] ?? 0) >= fltMinWindowSide,
+                  let intId = dictWindow[kCGWindowNumber as String] as? CGWindowID else { continue }
+            return intId
+        }
+        return nil
+    }
 
     /// Returns an app's windows: current-Space ones first (front to back, from AX),
     /// then windows on other Spaces (from the window server).

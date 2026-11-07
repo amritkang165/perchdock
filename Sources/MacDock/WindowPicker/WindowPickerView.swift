@@ -215,6 +215,9 @@ private struct WindowCardView: View {
                     }
                     .overlay(alignment: .topLeading) {
                         HStack(spacing: 4) {
+                            if objWindow.blnIsCurrent {
+                                showingBadge
+                            }
                             if objWindow.blnIsNew {
                                 newBadge
                             }
@@ -315,6 +318,18 @@ private struct WindowCardView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(Capsule().fill(Color.green))
+            .shadow(color: .black.opacity(0.2), radius: 1.5, y: 0.5)
+    }
+
+    /// "Showing" pill: this is the window already in front (so there's nothing to peek).
+    private var showingBadge: some View {
+        Label("Showing", systemImage: "eye.fill")
+            .labelStyle(.titleAndIcon)
+            .font(.system(size: 9.5, weight: .bold))
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Color.purple))
             .shadow(color: .black.opacity(0.2), radius: 1.5, y: 0.5)
     }
 

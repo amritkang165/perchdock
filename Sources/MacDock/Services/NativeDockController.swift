@@ -112,10 +112,12 @@ final class NativeDockController {
             restoreCommand("no-bouncing", objSnapshot.blnNoBouncing.map { "-bool \($0)" }),
         ]
 
-        // Poll our PID; once it's gone, restore only if the snapshot is still there.
+        // Poll our PID; once it's gone, restore only if the snapshot is still there and
+        // no newer MacDock has taken over (a quick relaunch re-hides the Dock itself).
+        let strProcessName = ProcessInfo.processInfo.processName
         let strScript = """
         while /bin/kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do /bin/sleep 2; done
-        if /usr/bin/defaults read \(strOwnDomain) \(Self.strSnapshotKey) >/dev/null 2>&1; then
+        if ! /usr/bin/pgrep -x '\(strProcessName)' >/dev/null && /usr/bin/defaults read \(strOwnDomain) \(Self.strSnapshotKey) >/dev/null 2>&1; then
           \(arrStrRestore.joined(separator: "\n  "))
           /usr/bin/defaults delete \(strOwnDomain) \(Self.strSnapshotKey)
           /usr/bin/killall Dock
