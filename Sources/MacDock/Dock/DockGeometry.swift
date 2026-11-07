@@ -21,7 +21,7 @@ struct DockGeometry {
     let intCount: Int
     /// Which items are dividers (thin, not magnified).
     let arrBlnDivider: [Bool]
-    /// Which items are wide tiles (the large Now Playing widget: fixed width, not magnified).
+    /// Which items are wide tiles (the large Now Playing player on a bottom dock: fixed width, not magnified).
     let arrBlnWide: [Bool]
 
     static let fltIndicatorSize: CGFloat = 5
@@ -75,13 +75,11 @@ struct DockGeometry {
         return fltIconSize
     }
 
-    /// Length along the bar of a wide tile (the large Now Playing widget; tall on side docks).
-    var fltWideWidth: CGFloat { nowPlayingLayout.fltMainLength }
+    /// Width of a wide tile (the large Now Playing player, bottom dock only).
+    var fltWideWidth: CGFloat { nowPlayingLayout.fltWidth }
 
-    /// Layout of the large Now Playing tile for this dock's size and orientation.
-    var nowPlayingLayout: NowPlayingLargeLayout {
-        NowPlayingLargeLayout(fltIconSize: fltIconSize, blnVertical: enmPosition.blnIsVertical)
-    }
+    /// Layout of the large Now Playing player at this dock's icon size.
+    var nowPlayingLayout: NowPlayingLargeLayout { NowPlayingLargeLayout(fltIconSize: fltIconSize) }
 
     /// Whether an item keeps its size under the cursor (dividers and wide tiles).
     /// - Parameter intIndex: Item index.

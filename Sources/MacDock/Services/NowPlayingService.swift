@@ -64,6 +64,8 @@ final class NowPlayingService {
     @ObservationIgnored private var objLastArtwork: NSImage?
     /// Restarts after the helper dies unexpectedly, capped so a broken system doesn't spin.
     @ObservationIgnored private var intRestarts = 0
+    /// Track whose Spotify artwork was last requested (so each track is fetched once).
+    @ObservationIgnored private var strArtworkFetchKey: String?
 
     /// Shared prelude: loads MediaRemote inside the helper.
     private static let strPrelude = """
@@ -245,10 +247,67 @@ final class NowPlayingService {
         objPositionDate = dblStamp > 0 ? Date(timeIntervalSince1970: dblStamp) : Date()
         let dblNewDuration = dictStatus["duration"] as? Double ?? 0
 
+        // Spotify doesn't share artwork with MediaRemote; ask Spotify for it instead.
+        if let objNew, objNew.objArtwork == nil, strBundleId == Self.strSpotifyId {
+            fetchSpotifyArtwork(strTrackKey: Self.trackKey(objNew))
+        }
+
         guard objNew != objTrack || blnPlaying != blnIsPlaying || dblNewDuration != dblDuration else { return }
         objTrack = objNew
         blnIsPlaying = blnPlaying
         dblDuration = dblNewDuration
+        onChange?()
+    }
+
+    // MARK: - Spotify artwork
+
+    private static let strSpotifyId = "com.spotify.client"
+
+    /// Identity of a track for matching late artwork to it.
+    /// - Parameter objTrack: Track.
+    /// - Returns: Key.
+    private static func trackKey(_ objTrack: Track) -> String {
+        "\(objTrack.strBundleId ?? "")|\(objTrack.strTitle)|\(objTrack.strArtist)"
+    }
+
+    /// Fetches the current Spotify track's cover (once per track) and attaches it if
+    /// that track is still playing when it arrives.
+    ///
+    /// Spotify's AppleScript gives the cover's URL. The first time, macOS asks whether
+    /// MacDock may control Spotify; if that's declined, the tile keeps the Spotify icon.
+    /// - Parameter strTrackKey: Track the artwork is for.
+    private func fetchSpotifyArtwork(strTrackKey: String) {
+        guard strArtworkFetchKey != strTrackKey else { return }
+        strArtworkFetchKey = strTrackKey
+
+        let objProcess = Process()
+        objProcess.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        objProcess.arguments = ["-e", "tell application id \"\(Self.strSpotifyId)\" to get artwork url of current track"]
+        let objPipe = Pipe()
+        objProcess.standardOutput = objPipe
+        objProcess.standardError = FileHandle.nullDevice
+        objProcess.terminationHandler = { [weak self] _ in
+            let objOutput = objPipe.fileHandleForReading.readDataToEndOfFile()
+            let strUrl = String(data: objOutput, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard let objUrl = URL(string: strUrl), objUrl.scheme == "https" else { return }
+            Task { [weak self] in
+                guard let (objData, _) = try? await URLSession.shared.data(from: objUrl),
+                      let objImage = NSImage(data: objData) else { return }
+                await self?.attachArtwork(objImage, strTrackKey: strTrackKey)
+            }
+        }
+        try? objProcess.run()
+    }
+
+    /// Sets late-arriving artwork on the current track, if it's still the same one.
+    /// - Parameters:
+    ///   - objImage: Cover art.
+    ///   - strTrackKey: Track it belongs to.
+    private func attachArtwork(_ objImage: NSImage, strTrackKey: String) {
+        guard let objCurrent = objTrack, Self.trackKey(objCurrent) == strTrackKey else { return }
+        objLastArtwork = objImage
+        objTrack = Track(strTitle: objCurrent.strTitle, strArtist: objCurrent.strArtist,
+                         objArtwork: objImage, strBundleId: objCurrent.strBundleId)
         onChange?()
     }
 

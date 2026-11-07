@@ -12,7 +12,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let objDockBadges = DockBadgeService()
     private let objNowPlaying = NowPlayingService()
     private let objBattery = BatteryService()
-    private let objVolume = SystemVolumeService()
     private let objNativeDock = NativeDockController()
     private let objUpdates = UpdateController()
     private lazy var objSettingsWindow = SettingsWindowController(objSettings: objSettings, objThumbnailService: objThumbnailService)
@@ -56,7 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             objBadges: objDockBadges,
             objNowPlaying: objNowPlaying,
             objBattery: objBattery,
-            objVolume: objVolume,
             objSettings: objSettings
         )
         objController.onOpenSettings = { [weak self] in
@@ -96,7 +94,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         objBattery.onChange = { [weak self] in self?.objAppTracker.rebuild() }
         objNowPlaying.start()
         objBattery.start()
-        objVolume.start()
     }
 
     /// Restores the native Dock on a normal quit so the user is never left without one.
@@ -182,6 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// - `--dump-windows`: logs every app's windows.
     /// - `--dump-recents=BUNDLE_ID,…`: writes apps' recent documents to /tmp/macdock-recents.txt.
     /// - `--open-settings`: opens the Settings window.
+    /// - `--flyout`: opens the side-dock Now Playing fly-out.
     /// - Parameter objController: The dock controller.
     private func runDebugArguments(_ objController: DockController) {
         let arrStrArgs = CommandLine.arguments
@@ -273,6 +271,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if arrStrArgs.contains("--fake-badges") {
             objDockBadges.debugFake(strBadgeId: "com.google.Chrome", strProgressId: "com.apple.finder")
         }
+        // `--flyout`: opens the side-dock Now Playing fly-out once something is playing.
+        if arrStrArgs.contains("--flyout") {
+            Task { @MainActor in
+                for _ in 0..<50 where !objController.debugShowFlyout() {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+        }
+
         // `--dump-recents=BUNDLE_ID[,BUNDLE_ID…]`: writes each app's recent documents to /tmp/macdock-recents.txt.
         if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--dump-recents=") }) {
             var strReport = ""

@@ -15,10 +15,6 @@ final class DockState {
     var intGroupPending: Int?
     /// Apps launched from the dock that haven't finished launching (they bounce).
     var setStrLaunching: Set<String> = []
-    /// Control under the cursor on the large Now Playing tile.
-    var enmWidgetHover: NowPlayingLargeLayout.Control?
-    /// Seek/volume bar being dragged on the large Now Playing tile.
-    var enmWidgetScrub: WidgetScrub?
 }
 
 /// One dock icon with its notification badge, progress bar and bounces.
@@ -125,7 +121,7 @@ struct DockView: View {
     let objBadges: DockBadgeService
     let objNowPlaying: NowPlayingService
     let objBattery: BatteryService
-    let objVolume: SystemVolumeService
+    let objPlayerInteraction: NowPlayingInteraction
 
     /// Live view for a widget tile.
     /// - Parameters:
@@ -135,7 +131,9 @@ struct DockView: View {
     @ViewBuilder
     private func widgetTile(_ enmWidget: DockItem.Widget, fltSize: CGFloat) -> some View {
         switch enmWidget {
-        case .nowPlaying: NowPlayingTileView(objNowPlaying: objNowPlaying, fltSize: fltSize)
+        case .nowPlaying:
+            NowPlayingTileView(objNowPlaying: objNowPlaying, fltSize: fltSize,
+                               blnShowsProgress: objSettings.blnUsesNowPlayingFlyout)
         case .battery: BatteryTileView(objBattery: objBattery, fltSize: fltSize)
         }
     }
@@ -180,11 +178,9 @@ struct DockView: View {
                 } else if objGeometry.arrBlnWide[safe: intIndex] == true {
                     NowPlayingLargeView(
                         objNowPlaying: objNowPlaying,
-                        objVolume: objVolume,
+                        objInteraction: objPlayerInteraction,
                         fltIconSize: objGeometry.fltIconSize,
-                        blnVertical: objGeometry.enmPosition.blnIsVertical,
-                        enmScrub: objState.enmWidgetScrub,
-                        enmHovered: objState.enmWidgetHover
+                        enmSeekStyle: objSettings.enmSeekBarStyle
                     )
                     .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.iconCross(forSize: objGeometry.fltIconSize)))
                     .transition(.scale(scale: 0.3).combined(with: .opacity))

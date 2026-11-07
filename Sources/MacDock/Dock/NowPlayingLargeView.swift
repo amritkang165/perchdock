@@ -1,21 +1,16 @@
+import AppKit
 import SwiftUI
 
-/// Where everything sits in the large Now Playing tile, shared by drawing and
+/// Where everything sits in the large Now Playing player, shared by drawing and
 /// hit-testing so clicks always land on what's drawn.
 ///
-/// Two shapes, both one icon thick across the bar:
-/// - **wide** (bottom dock): artwork on the left; title, transport + volume, and
-///   seek rows to its right;
-/// - **tall** (side docks): artwork on top; transport buttons stacked beside a
-///   vertical volume bar with mute below it; seek bar and times at the bottom.
-///   The title shows in the hover label instead.
+/// Left to right: square artwork, title over artist, then large previous /
+/// play-pause / next buttons with the seek bar beneath them. One icon tall, so it
+/// fits a bottom dock as a tile and a side dock's fly-out alike.
 ///
-/// Coordinates are tile-local with a top-left origin, in screen orientation.
-/// Proportions scale with the dock's icon size.
+/// Coordinates are local with a top-left origin; proportions scale with the
+/// dock's icon size.
 struct NowPlayingLargeLayout {
-    /// Wide tile length as a multiple of the icon size.
-    static let fltWidthRatio: CGFloat = 5.4
-
     /// A control under the cursor.
     enum Control: Equatable {
         case artwork
@@ -24,387 +19,417 @@ struct NowPlayingLargeLayout {
         case next
         /// Seek bar, at a 0…1 position.
         case seek(Double)
-        case mute
-        /// Volume bar, at a 0…1 level.
-        case volume(Float)
     }
 
-    /// Tall shape (side docks) rather than wide (bottom dock).
-    let blnVertical: Bool
-    /// Tile size in screen orientation.
     let fltWidth: CGFloat
     let fltHeight: CGFloat
-
-    /// Square artwork (left edge when wide, top when tall).
     let objArtwork: CGRect
-    /// Title — artist line (empty when tall).
     let objTitle: CGRect
-    /// Transport buttons.
+    let objArtist: CGRect
     let objPrevious: CGRect
     let objPlayPause: CGRect
     let objNext: CGRect
-    /// Mute button and volume bar (horizontal when wide, vertical when tall).
-    let objMute: CGRect
-    let objVolumeBar: CGRect
-    /// Seek bar and its elapsed / remaining labels.
+    /// Seek bar's hit/draw strip (the line runs along its middle).
     let objSeekBar: CGRect
-    let objElapsedLabel: CGRect
-    let objRemainingLabel: CGRect
-    /// Size of each transport button.
-    let fltButton: CGFloat
-    /// Point size for the time labels.
-    let fltTimeFont: CGFloat
+    /// Glyph sizes for the skip buttons and play/pause.
+    let fltSkipGlyph: CGFloat
+    let fltPlayGlyph: CGFloat
 
-    /// Length along the dock's bar (what the dock reserves for the tile).
-    var fltMainLength: CGFloat { blnVertical ? fltHeight : fltWidth }
-
-    /// Builds the layout for an icon size and dock orientation.
-    /// - Parameters:
-    ///   - fltIconSize: Dock icon size (the tile's thickness across the bar).
-    ///   - blnVertical: Tall shape for a side dock.
-    init(fltIconSize: CGFloat, blnVertical: Bool = false) {
-        self.blnVertical = blnVertical
+    /// Builds the layout for an icon size.
+    /// - Parameter fltIconSize: Dock icon size (the player's height).
+    init(fltIconSize: CGFloat) {
         let fltIcon = fltIconSize
+        let fltPad = (fltIcon * 0.19).rounded()
+        fltHeight = fltIcon
         objArtwork = CGRect(x: 0, y: 0, width: fltIcon, height: fltIcon)
 
-        if blnVertical {
-            // Tall: art on top, then [buttons | volume] side by side, then seek + times.
-            let fltPad = (fltIcon * 0.08).rounded()
-            let fltSide = (fltIcon * 0.3).rounded()
-            let fltGap = (fltSide * 0.22).rounded()
-            let fltTop = fltIcon + fltPad
-            fltButton = fltSide
-            fltTimeFont = (fltIcon * 0.145).rounded()
+        // Title over artist.
+        let fltTextX = fltIcon + fltPad
+        let fltTextWidth = (fltIcon * 1.77).rounded()
+        objTitle = CGRect(x: fltTextX, y: fltIcon * 0.2, width: fltTextWidth, height: fltIcon * 0.3)
+        objArtist = CGRect(x: fltTextX, y: fltIcon * 0.52, width: fltTextWidth, height: fltIcon * 0.26)
 
-            objPrevious = CGRect(x: fltPad, y: fltTop, width: fltSide, height: fltSide)
-            objPlayPause = objPrevious.offsetBy(dx: 0, dy: fltSide + fltGap)
-            objNext = objPlayPause.offsetBy(dx: 0, dy: fltSide + fltGap)
-            objMute = CGRect(x: fltIcon - fltPad - fltSide, y: objNext.minY, width: fltSide, height: fltSide)
-            objVolumeBar = CGRect(x: objMute.midX - 2, y: fltTop + 2, width: 4, height: objMute.minY - 3 - (fltTop + 2))
+        // Transport row in equal thirds, seek strip beneath it.
+        let fltControlsX = fltTextX + fltTextWidth + fltPad
+        let fltControlsWidth = (fltIcon * 2.46).rounded()
+        let fltThird = fltControlsWidth / 3
+        let fltRowTop = fltIcon * 0.06
+        let fltRowHeight = fltIcon * 0.52
+        objPrevious = CGRect(x: fltControlsX, y: fltRowTop, width: fltThird, height: fltRowHeight)
+        objPlayPause = objPrevious.offsetBy(dx: fltThird, dy: 0)
+        objNext = objPlayPause.offsetBy(dx: fltThird, dy: 0)
+        objSeekBar = CGRect(x: fltControlsX, y: fltIcon * 0.66, width: fltControlsWidth, height: fltIcon * 0.24)
 
-            objSeekBar = CGRect(x: fltPad, y: objNext.maxY + fltPad + 2, width: fltIcon - fltPad * 2, height: 4)
-            let fltLabelHeight = fltTimeFont * 1.3
-            let fltLabelWidth = objSeekBar.width / 2
-            objElapsedLabel = CGRect(x: fltPad, y: objSeekBar.maxY + 2, width: fltLabelWidth, height: fltLabelHeight)
-            objRemainingLabel = objElapsedLabel.offsetBy(dx: fltLabelWidth, dy: 0)
-            objTitle = .zero
-
-            fltWidth = fltIcon
-            fltHeight = (objElapsedLabel.maxY + fltPad).rounded()
-        } else {
-            // Wide: art on the left; title, then transport + volume, then seek, to its right.
-            let fltPad = (fltIcon * 0.1).rounded()
-            let fltContentX = fltIcon + fltPad
-            let fltWide = (fltIcon * Self.fltWidthRatio).rounded()
-            let fltContentEnd = fltWide - fltPad
-            let fltSide = (fltIcon * 0.34).rounded()
-            let fltGap = fltSide * 0.25
-            let fltControlsMidY = fltIcon * 0.49
-            fltButton = fltSide
-            fltTimeFont = fltIcon * 0.155
-
-            objTitle = CGRect(x: fltContentX, y: fltIcon * 0.06, width: fltContentEnd - fltContentX, height: fltIcon * 0.26)
-            objPrevious = CGRect(x: fltContentX - fltGap / 2, y: fltControlsMidY - fltSide / 2, width: fltSide, height: fltSide)
-            objPlayPause = objPrevious.offsetBy(dx: fltSide + fltGap, dy: 0)
-            objNext = objPlayPause.offsetBy(dx: fltSide + fltGap, dy: 0)
-
-            let fltVolumeWidth = (fltContentEnd - fltContentX) * 0.3
-            objVolumeBar = CGRect(x: fltContentEnd - fltVolumeWidth, y: fltControlsMidY - 2, width: fltVolumeWidth, height: 4)
-            objMute = CGRect(x: objVolumeBar.minX - fltSide - 2, y: fltControlsMidY - fltSide / 2, width: fltSide, height: fltSide)
-
-            let fltTimeWidth = (fltIcon * 0.62).rounded()
-            let fltSeekMidY = fltIcon * 0.82
-            let fltSeekStart = fltContentX + fltTimeWidth
-            objSeekBar = CGRect(x: fltSeekStart, y: fltSeekMidY - 2, width: fltContentEnd - fltTimeWidth - fltSeekStart, height: 4)
-            let fltLabelHeight = fltTimeFont * 1.3
-            objElapsedLabel = CGRect(x: fltContentX, y: fltSeekMidY - fltLabelHeight / 2, width: fltTimeWidth - 4, height: fltLabelHeight)
-            objRemainingLabel = CGRect(x: objSeekBar.maxX + 4, y: objElapsedLabel.minY, width: fltTimeWidth - 4, height: fltLabelHeight)
-
-            fltWidth = fltWide
-            fltHeight = fltIcon
-        }
+        fltSkipGlyph = (fltIcon * 0.29).rounded()
+        fltPlayGlyph = (fltIcon * 0.4).rounded()
+        fltWidth = fltControlsX + fltControlsWidth + (fltIcon * 0.23).rounded()
     }
 
-    // MARK: - Hit-testing
-
-    /// Control at a tile-local point (with generous targets for the thin bars).
+    /// Control at a local point (the seek strip is generous so the thin line is easy to grab).
     /// - Parameter objPoint: Point (top-left origin).
     /// - Returns: The control, or `nil` over empty space.
     func control(at objPoint: CGPoint) -> Control? {
         if objArtwork.contains(objPoint) { return .artwork }
-        for (objFrame, enmControl) in [(objPrevious, Control.previous), (objPlayPause, .playPause), (objNext, .next), (objMute, .mute)]
-            where objFrame.insetBy(dx: -2, dy: -2).contains(objPoint) {
+        for (objFrame, enmControl) in [(objPrevious, Control.previous), (objPlayPause, .playPause), (objNext, .next)]
+            where objFrame.contains(objPoint) {
             return enmControl
         }
-        let objVolumeTarget = blnVertical
-            ? objVolumeBar.insetBy(dx: -fltButton / 2, dy: -4)
-            : objVolumeBar.insetBy(dx: -4, dy: -fltButton / 2)
-        if objVolumeTarget.contains(objPoint) {
-            return .volume(volumeLevel(at: objPoint))
-        }
-        // The seek row is the whole strip around the bar and its times.
-        let blnInSeekRow = blnVertical
-            ? objPoint.y >= objSeekBar.minY - 6
-            : objPoint.x >= objSeekBar.minX - 6 && objPoint.x <= objSeekBar.maxX + 6 && objPoint.y >= fltHeight * 0.66
-        if blnInSeekRow {
+        if objPoint.x >= objSeekBar.minX - 6, objPoint.x <= objSeekBar.maxX + 6, objPoint.y >= objPrevious.maxY {
             return .seek(seekFraction(at: objPoint))
         }
         return nil
     }
 
     /// Track position under a point, along the seek bar.
-    /// - Parameter objPoint: Tile-local point.
+    /// - Parameter objPoint: Local point.
     /// - Returns: 0…1.
     func seekFraction(at objPoint: CGPoint) -> Double {
-        Self.clamp((objPoint.x - objSeekBar.minX) / max(objSeekBar.width, 1))
-    }
-
-    /// Volume under a point, along the volume bar (bottom = 0 when tall).
-    /// - Parameter objPoint: Tile-local point.
-    /// - Returns: 0…1.
-    func volumeLevel(at objPoint: CGPoint) -> Float {
-        let fltRaw = blnVertical
-            ? (objVolumeBar.maxY - objPoint.y) / max(objVolumeBar.height, 1)
-            : (objPoint.x - objVolumeBar.minX) / max(objVolumeBar.width, 1)
-        return Float(Self.clamp(fltRaw))
-    }
-
-    /// Clamps to 0…1.
-    /// - Parameter fltValue: Raw value.
-    /// - Returns: Clamped value.
-    private static func clamp(_ fltValue: CGFloat) -> Double {
-        Double(min(1, max(0, fltValue)))
+        Double(min(1, max(0, (objPoint.x - objSeekBar.minX) / max(objSeekBar.width, 1))))
     }
 }
 
-/// Live value being dragged on a bar, shown instead of the real one until release.
-enum WidgetScrub: Equatable {
-    case seek(Double)
-    case volume(Float)
+/// Hover, press and seek-scrub state for the large player, shared by the dock
+/// tile and the side-dock fly-out (both feed it raw mouse events).
+@MainActor
+@Observable
+final class NowPlayingInteraction {
+    /// Control under the cursor (seek positions collapsed to one value).
+    private(set) var enmHover: NowPlayingLargeLayout.Control?
+    /// Seek position being dragged, shown instead of the real one until release.
+    private(set) var dblScrub: Double?
+
+    @ObservationIgnored private var enmPressed: NowPlayingLargeLayout.Control?
+    @ObservationIgnored private let objNowPlaying: NowPlayingService
+
+    /// Whether a press on one of the player's controls is in progress.
+    var blnIsPressing: Bool { enmPressed != nil }
+
+    /// Creates the handler.
+    /// - Parameter objNowPlaying: Playback to control.
+    init(objNowPlaying: NowPlayingService) {
+        self.objNowPlaying = objNowPlaying
+    }
+
+    /// Updates the hover highlight.
+    /// - Parameter enmControl: Control under the cursor, or `nil`.
+    func hover(_ enmControl: NowPlayingLargeLayout.Control?) {
+        // The highlight only cares that it's the seek bar, not where on it.
+        var enmNormalized = enmControl
+        if case .seek = enmControl { enmNormalized = .seek(0) }
+        if enmHover != enmNormalized { enmHover = enmNormalized }
+    }
+
+    /// Starts a press.
+    /// - Parameter enmControl: Control under the cursor.
+    /// - Returns: `true` if the press landed on a control (and is now owned by the player).
+    @discardableResult
+    func press(_ enmControl: NowPlayingLargeLayout.Control?) -> Bool {
+        guard let enmControl else { return false }
+        // Nothing to seek in a live stream.
+        if case .seek = enmControl, objNowPlaying.dblDuration <= 0 { return false }
+        enmPressed = enmControl
+        if case .seek(let dblFraction) = enmControl { dblScrub = dblFraction }
+        return true
+    }
+
+    /// Follows a drag (only seeking responds).
+    /// - Parameter dblFraction: Seek position under the cursor.
+    func drag(toSeekFraction dblFraction: Double) {
+        guard case .seek = enmPressed else { return }
+        dblScrub = dblFraction
+    }
+
+    /// Finishes a press, running its control.
+    func release() {
+        let enmControl = enmPressed
+        let dblFinalScrub = dblScrub
+        enmPressed = nil
+        dblScrub = nil
+        switch enmControl {
+        case .artwork:
+            // Bring the player forward (Spotify, Music, the browser…).
+            if let strBundleId = objNowPlaying.objTrack?.strBundleId,
+               let objApp = NSRunningApplication.runningApplications(withBundleIdentifier: strBundleId).first {
+                objApp.activate()
+            }
+        case .previous:
+            objNowPlaying.send(.previousTrack)
+        case .playPause:
+            objNowPlaying.send(.togglePlayPause)
+        case .next:
+            objNowPlaying.send(.nextTrack)
+        case .seek(let dblPressFraction):
+            objNowPlaying.seek(to: (dblFinalScrub ?? dblPressFraction) * objNowPlaying.dblDuration)
+        case nil:
+            break
+        }
+    }
+
+    /// Drops any press, scrub and hover (e.g. the player disappeared).
+    func cancel() {
+        enmPressed = nil
+        dblScrub = nil
+        enmHover = nil
+    }
 }
 
-/// Large Now Playing tile: artwork, title and artist, previous / play-pause / next,
-/// mute and volume, and a seek bar with elapsed and remaining time.
+/// The large player: artwork, scrolling title and artist, large transport buttons
+/// and a squiggly or straight seek bar.
 struct NowPlayingLargeView: View {
     let objNowPlaying: NowPlayingService
-    let objVolume: SystemVolumeService
+    let objInteraction: NowPlayingInteraction
     let fltIconSize: CGFloat
-    /// Tall shape for a side dock.
-    let blnVertical: Bool
-    /// Bar being dragged, if any.
-    let enmScrub: WidgetScrub?
-    /// Control under the cursor, for hover highlights.
-    let enmHovered: NowPlayingLargeLayout.Control?
+    let enmSeekStyle: SeekBarStyle
 
     var body: some View {
-        let objLayout = NowPlayingLargeLayout(fltIconSize: fltIconSize, blnVertical: blnVertical)
-        let fltCorner = fltIconSize * 0.22
-        // Redraw a few times a second so the seek bar and times advance.
-        TimelineView(.periodic(from: .now, by: 0.5)) { objContext in
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: fltCorner, style: .continuous)
-                    .fill(Color(white: 0.1).opacity(0.9))
-
-                NowPlayingTileView(objNowPlaying: objNowPlaying, fltSize: objLayout.objArtwork.width, blnShowsState: false)
-                    .frame(width: objLayout.objArtwork.width, height: objLayout.objArtwork.height)
-
-                if !blnVertical {
-                    titleLine(objLayout)
-                }
-                transport(objLayout)
-                volume(objLayout)
-                seek(objLayout, objNow: objContext.date)
-            }
-            .frame(width: objLayout.fltWidth, height: objLayout.fltHeight, alignment: .topLeading)
-            .clipShape(RoundedRectangle(cornerRadius: fltCorner, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: fltCorner, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
-        }
-    }
-
-    // MARK: - Parts
-
-    /// "Title — Artist", the artist dimmer.
-    /// - Parameter objLayout: Layout.
-    /// - Returns: The line.
-    private func titleLine(_ objLayout: NowPlayingLargeLayout) -> some View {
+        let objLayout = NowPlayingLargeLayout(fltIconSize: fltIconSize)
+        let fltCorner = fltIconSize * 0.21
         let objTrack = objNowPlaying.objTrack
-        let fltFont = fltIconSize * 0.2
-        var objText = Text(objTrack?.strTitle ?? "Not Playing").font(.system(size: fltFont, weight: .semibold))
-        if let strArtist = objTrack?.strArtist, !strArtist.isEmpty {
-            objText = objText + Text("  \(strArtist)").font(.system(size: fltFont * 0.92)).foregroundColor(.white.opacity(0.6))
-        }
-        return objText
-            .foregroundColor(.white)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(width: objLayout.objTitle.width, height: objLayout.objTitle.height, alignment: .leading)
-            .offset(x: objLayout.objTitle.minX, y: objLayout.objTitle.minY)
-    }
+        let blnPlaying = objNowPlaying.blnIsPlaying
 
-    /// Previous, play/pause and next.
-    /// - Parameter objLayout: Layout.
-    /// - Returns: The buttons.
-    private func transport(_ objLayout: NowPlayingLargeLayout) -> some View {
         ZStack(alignment: .topLeading) {
-            glyph("backward.fill", objFrame: objLayout.objPrevious, enmControl: .previous, fltScale: 0.5)
-            glyph(objNowPlaying.blnIsPlaying ? "pause.fill" : "play.fill", objFrame: objLayout.objPlayPause,
-                  enmControl: .playPause, fltScale: 0.62)
-            glyph("forward.fill", objFrame: objLayout.objNext, enmControl: .next, fltScale: 0.5)
+            RoundedRectangle(cornerRadius: fltCorner, style: .continuous)
+                .fill(Color(white: 0.08).opacity(0.97))
+
+            NowPlayingTileView(objNowPlaying: objNowPlaying, fltSize: objLayout.objArtwork.width, blnShowsState: false)
+                .frame(width: objLayout.objArtwork.width, height: objLayout.objArtwork.height)
+
+            MarqueeText(strText: objTrack?.strTitle ?? "Not Playing",
+                        objFont: .system(size: fltIconSize * 0.25, weight: .semibold),
+                        objColor: .white, blnRunning: blnPlaying)
+                .frame(width: objLayout.objTitle.width, height: objLayout.objTitle.height)
+                .offset(x: objLayout.objTitle.minX, y: objLayout.objTitle.minY)
+
+            artistLine(objLayout, blnPlaying: blnPlaying)
+
+            glyph("backward.fill", objFrame: objLayout.objPrevious, fltSize: objLayout.fltSkipGlyph, enmControl: .previous)
+            glyph(blnPlaying ? "pause.fill" : "play.fill", objFrame: objLayout.objPlayPause,
+                  fltSize: objLayout.fltPlayGlyph, enmControl: .playPause)
+            glyph("forward.fill", objFrame: objLayout.objNext, fltSize: objLayout.fltSkipGlyph, enmControl: .next)
+
+            SeekBarView(objNowPlaying: objNowPlaying, dblScrub: objInteraction.dblScrub, enmStyle: enmSeekStyle,
+                        blnActive: objInteraction.dblScrub != nil || objInteraction.enmHover == .seek(0),
+                        fltIconSize: fltIconSize)
+                .frame(width: objLayout.objSeekBar.width, height: objLayout.objSeekBar.height)
+                .offset(x: objLayout.objSeekBar.minX, y: objLayout.objSeekBar.minY)
         }
+        .frame(width: objLayout.fltWidth, height: objLayout.fltHeight, alignment: .topLeading)
+        .clipShape(RoundedRectangle(cornerRadius: fltCorner, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: fltCorner, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
     }
 
-    /// Mute button and volume bar.
-    /// - Parameter objLayout: Layout.
-    /// - Returns: The controls.
-    @ViewBuilder
-    private func volume(_ objLayout: NowPlayingLargeLayout) -> some View {
-        if objVolume.blnHasVolume {
-            let fltLevel: Float = {
-                if case .volume(let fltScrub) = enmScrub { return fltScrub }
-                return objVolume.blnIsMuted ? 0 : objVolume.fltVolume
-            }()
-            ZStack(alignment: .topLeading) {
-                glyph(Self.speakerSymbol(fltLevel: fltLevel, blnMuted: objVolume.blnIsMuted),
-                      objFrame: objLayout.objMute, enmControl: .mute, fltScale: 0.5)
-                bar(objFrame: objLayout.objVolumeBar, dblFraction: Double(fltLevel),
-                    blnActive: isScrubbing(volume: true) || isHoveringVolume)
-            }
-        }
-    }
-
-    /// Seek bar with elapsed and remaining time (hidden for live streams without a length).
+    /// Artist, or the scrub position while dragging the seek bar.
     /// - Parameters:
     ///   - objLayout: Layout.
-    ///   - objNow: Current time, for extrapolating the position.
-    /// - Returns: The row.
+    ///   - blnPlaying: Whether it's playing (scrolls only then).
+    /// - Returns: The line.
     @ViewBuilder
-    private func seek(_ objLayout: NowPlayingLargeLayout, objNow: Date) -> some View {
-        let dblDuration = objNowPlaying.dblDuration
-        if dblDuration > 0 {
-            let dblFraction: Double = {
-                if case .seek(let dblScrub) = enmScrub { return dblScrub }
-                return objNowPlaying.elapsed(at: objNow) / dblDuration
-            }()
-            let dblElapsed = dblFraction * dblDuration
-            ZStack(alignment: .topLeading) {
-                timeLabel(Self.time(dblElapsed), objFrame: objLayout.objElapsedLabel, enmAlignment: .leading)
-                bar(objFrame: objLayout.objSeekBar, dblFraction: dblFraction,
-                    blnActive: isScrubbing(volume: false) || isHoveringSeek)
-                timeLabel("-" + Self.time(max(0, dblDuration - dblElapsed)), objFrame: objLayout.objRemainingLabel,
-                          enmAlignment: .trailing)
+    private func artistLine(_ objLayout: NowPlayingLargeLayout, blnPlaying: Bool) -> some View {
+        let objFont = Font.system(size: fltIconSize * 0.22)
+        Group {
+            if let dblScrub = objInteraction.dblScrub {
+                let dblDuration = objNowPlaying.dblDuration
+                Text("\(Self.time(dblScrub * dblDuration)) / \(Self.time(dblDuration))")
+                    .font(objFont.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                MarqueeText(strText: objNowPlaying.objTrack?.strArtist ?? "",
+                            objFont: objFont, objColor: .white.opacity(0.6), blnRunning: blnPlaying)
             }
-            .font(.system(size: objLayout.fltTimeFont, weight: .medium).monospacedDigit())
-            .foregroundColor(.white.opacity(0.65))
         }
+        .frame(width: objLayout.objArtist.width, height: objLayout.objArtist.height)
+        .offset(x: objLayout.objArtist.minX, y: objLayout.objArtist.minY)
     }
 
-    // MARK: - Building blocks
-
-    /// A transport/mute symbol, brightened while hovered.
+    /// A transport symbol with a soft highlight while hovered.
     /// - Parameters:
     ///   - strSymbol: SF Symbol.
     ///   - objFrame: Button frame.
+    ///   - fltSize: Glyph size.
     ///   - enmControl: Control it represents (for hover).
-    ///   - fltScale: Symbol size relative to the button.
     /// - Returns: The glyph.
-    private func glyph(_ strSymbol: String, objFrame: CGRect, enmControl: NowPlayingLargeLayout.Control, fltScale: CGFloat) -> some View {
-        let blnHovered = enmHovered == enmControl
+    private func glyph(_ strSymbol: String, objFrame: CGRect, fltSize: CGFloat,
+                       enmControl: NowPlayingLargeLayout.Control) -> some View {
+        let blnHovered = objInteraction.enmHover == enmControl
+        let fltHighlight = min(objFrame.width, objFrame.height) * 0.95
         return Image(systemName: strSymbol)
-            .font(.system(size: objFrame.height * fltScale, weight: .semibold))
-            .foregroundColor(.white.opacity(blnHovered ? 1 : 0.85))
+            .font(.system(size: fltSize, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: fltHighlight, height: fltHighlight)
+            .background(Circle().fill(Color.white.opacity(blnHovered ? 0.14 : 0)))
             .frame(width: objFrame.width, height: objFrame.height)
-            .background(Circle().fill(Color.white.opacity(blnHovered ? 0.16 : 0)))
             .offset(x: objFrame.minX, y: objFrame.minY)
             .animation(.easeOut(duration: 0.12), value: blnHovered)
-    }
-
-    /// A thin progress bar with a knob that grows while hovered or dragged.
-    /// Taller-than-wide frames make a vertical bar that fills from the bottom.
-    /// - Parameters:
-    ///   - objFrame: Bar frame.
-    ///   - dblFraction: Filled portion 0…1.
-    ///   - blnActive: Hovered or dragged.
-    /// - Returns: The bar.
-    private func bar(objFrame: CGRect, dblFraction: Double, blnActive: Bool) -> some View {
-        let blnUpright = objFrame.height > objFrame.width
-        let fltLength = blnUpright ? objFrame.height : objFrame.width
-        let fltFilled = fltLength * CGFloat(min(1, max(0, dblFraction)))
-        let fltKnob: CGFloat = blnActive ? 10 : 0
-        return ZStack(alignment: blnUpright ? .bottom : .leading) {
-            Capsule().fill(Color.white.opacity(0.2))
-            Capsule().fill(Color.white.opacity(0.9))
-                .frame(width: blnUpright ? nil : fltFilled, height: blnUpright ? fltFilled : nil)
-            Circle()
-                .fill(Color.white)
-                .frame(width: fltKnob, height: fltKnob)
-                .offset(x: blnUpright ? 0 : fltFilled - fltKnob / 2, y: blnUpright ? -(fltFilled - fltKnob / 2) : 0)
-        }
-        .frame(width: objFrame.width, height: objFrame.height)
-        .offset(x: objFrame.minX, y: objFrame.minY)
-        .animation(.easeOut(duration: 0.12), value: blnActive)
-    }
-
-    /// Elapsed or remaining time in its slot.
-    /// - Parameters:
-    ///   - strText: Time text.
-    ///   - objFrame: Label frame.
-    ///   - enmAlignment: Leading (elapsed) or trailing (remaining).
-    /// - Returns: The label.
-    private func timeLabel(_ strText: String, objFrame: CGRect, enmAlignment: Alignment) -> some View {
-        Text(strText)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .frame(width: objFrame.width, height: objFrame.height, alignment: enmAlignment)
-            .offset(x: objFrame.minX, y: objFrame.minY)
-    }
-
-    /// Whether the given bar is being dragged.
-    /// - Parameter blnVolume: Volume bar (`true`) or seek bar.
-    /// - Returns: Whether it's scrubbing.
-    private func isScrubbing(volume blnVolume: Bool) -> Bool {
-        switch enmScrub {
-        case .volume: blnVolume
-        case .seek: !blnVolume
-        case nil: false
-        }
-    }
-
-    private var isHoveringVolume: Bool {
-        if case .volume = enmHovered { return true }
-        return false
-    }
-
-    private var isHoveringSeek: Bool {
-        if case .seek = enmHovered { return true }
-        return false
-    }
-
-    /// Speaker symbol for a volume level.
-    /// - Parameters:
-    ///   - fltLevel: Volume 0…1.
-    ///   - blnMuted: Muted.
-    /// - Returns: SF Symbol name.
-    private static func speakerSymbol(fltLevel: Float, blnMuted: Bool) -> String {
-        if blnMuted || fltLevel <= 0.001 { return "speaker.slash.fill" }
-        if fltLevel < 0.34 { return "speaker.wave.1.fill" }
-        if fltLevel < 0.67 { return "speaker.wave.2.fill" }
-        return "speaker.wave.3.fill"
     }
 
     /// "m:ss" (or "h:mm:ss").
     /// - Parameter dblSeconds: Seconds.
     /// - Returns: Formatted time.
-    private static func time(_ dblSeconds: Double) -> String {
-        let intTotal = Int(dblSeconds.rounded(.down))
+    static func time(_ dblSeconds: Double) -> String {
+        let intTotal = Int(max(0, dblSeconds).rounded(.down))
         let intHours = intTotal / 3600
         let intMinutes = (intTotal % 3600) / 60
         let intSecs = intTotal % 60
         return intHours > 0
             ? String(format: "%d:%02d:%02d", intHours, intMinutes, intSecs)
             : String(format: "%d:%02d", intMinutes, intSecs)
+    }
+}
+
+/// Seek bar: the played part as a gently moving wave (or a solid line), the rest
+/// a faint straight line, with a playhead.
+private struct SeekBarView: View {
+    let objNowPlaying: NowPlayingService
+    /// Position being dragged, if any.
+    let dblScrub: Double?
+    let enmStyle: SeekBarStyle
+    /// Hovered or dragged (the playhead grows).
+    let blnActive: Bool
+    let fltIconSize: CGFloat
+
+    var body: some View {
+        let blnPlaying = objNowPlaying.blnIsPlaying
+        let blnSquiggly = enmStyle == .squiggly
+        // The wave animates smoothly; a straight bar only needs to creep forward.
+        TimelineView(.animation(minimumInterval: blnSquiggly ? 1.0 / 30 : 0.5, paused: !blnPlaying)) { objContext in
+            let dblDuration = objNowPlaying.dblDuration
+            let dblFraction = dblScrub ?? (dblDuration > 0 ? objNowPlaying.elapsed(at: objContext.date) / dblDuration : 0)
+            let dblPhase = objContext.date.timeIntervalSinceReferenceDate
+            Canvas { objCanvas, objSize in
+                draw(in: &objCanvas, objSize: objSize, fltFraction: CGFloat(min(1, max(0, dblFraction))),
+                     blnWave: blnSquiggly && blnPlaying, dblPhase: dblPhase)
+            }
+        }
+    }
+
+    /// Draws the track, the played part and the playhead.
+    /// - Parameters:
+    ///   - objCanvas: Canvas.
+    ///   - objSize: Canvas size.
+    ///   - fltFraction: Played portion 0…1.
+    ///   - blnWave: Draw the played part as a wave (squiggly style while playing).
+    ///   - dblPhase: Animation time, for the wave's drift.
+    private func draw(in objCanvas: inout GraphicsContext, objSize: CGSize, fltFraction: CGFloat, blnWave: Bool, dblPhase: Double) {
+        let fltThickness = max(2.5, fltIconSize * 0.055)
+        let fltMid = objSize.height / 2
+        let fltPlayed = objSize.width * fltFraction
+        let fltGap = fltThickness * 1.2
+
+        // Unplayed: faint, straight.
+        if fltPlayed + fltGap < objSize.width {
+            var objRest = Path()
+            objRest.move(to: CGPoint(x: fltPlayed + fltGap, y: fltMid))
+            objRest.addLine(to: CGPoint(x: objSize.width, y: fltMid))
+            objCanvas.stroke(objRest, with: .color(.white.opacity(0.22)),
+                             style: StrokeStyle(lineWidth: fltThickness, lineCap: .round))
+        }
+
+        // Played: wave (drifting right) or a solid line.
+        if fltPlayed > 0.5 {
+            var objPlayedPath = Path()
+            if blnWave {
+                let fltAmplitude = fltThickness * 0.9
+                let fltWavelength = fltThickness * 4.4
+                let fltShift = CGFloat(dblPhase.truncatingRemainder(dividingBy: 1.6) / 1.6) * fltWavelength
+                objPlayedPath.move(to: CGPoint(x: 0, y: fltMid))
+                var fltX: CGFloat = 0
+                while fltX <= fltPlayed {
+                    // Taper the wave into the playhead so it meets it on the centerline.
+                    let fltTaper = min(1, (fltPlayed - fltX) / fltWavelength, fltX / fltWavelength)
+                    let fltY = fltMid + sin((fltX - fltShift) / fltWavelength * 2 * .pi) * fltAmplitude * fltTaper
+                    objPlayedPath.addLine(to: CGPoint(x: fltX, y: fltY))
+                    fltX += 0.75
+                }
+            } else {
+                objPlayedPath.move(to: CGPoint(x: 0, y: fltMid))
+                objPlayedPath.addLine(to: CGPoint(x: fltPlayed, y: fltMid))
+            }
+            objCanvas.stroke(objPlayedPath, with: .color(.white),
+                             style: StrokeStyle(lineWidth: fltThickness * (blnWave ? 0.85 : 1), lineCap: .round, lineJoin: .round))
+        }
+
+        // Playhead: a short upright capsule, taller while hovered or dragged.
+        let fltHeadHeight = fltThickness * (blnActive ? 4.4 : 3.4)
+        let fltHeadWidth = fltThickness * (blnActive ? 1.4 : 1.1)
+        let objHead = CGRect(x: fltPlayed - fltHeadWidth / 2, y: fltMid - fltHeadHeight / 2, width: fltHeadWidth, height: fltHeadHeight)
+        objCanvas.fill(Path(roundedRect: objHead, cornerRadius: fltHeadWidth / 2), with: .color(.white))
+    }
+}
+
+/// One line of text that scrolls sideways when it doesn't fit: it waits, glides
+/// to the end, pauses, and starts over. Short text sits still.
+struct MarqueeText: View {
+    let strText: String
+    let objFont: Font
+    let objColor: Color
+    /// Scroll only while true (e.g. while playing); otherwise show the start.
+    let blnRunning: Bool
+
+    @State private var fltTextWidth: CGFloat = 0
+    @State private var objCycleStart = Date()
+
+    /// Pause before scrolling and at the end, and scroll speed (points per second).
+    private static let dblStartHold = 2.0
+    private static let dblEndHold = 1.5
+    private static let fltSpeed: CGFloat = 24
+
+    var body: some View {
+        GeometryReader { objProxy in
+            let fltOverflow = max(0, fltTextWidth - objProxy.size.width)
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !blnRunning || fltOverflow <= 0)) { objContext in
+                let fltOffset = blnRunning ? offset(fltOverflow: fltOverflow, objNow: objContext.date) : 0
+                Text(strText)
+                    .font(objFont)
+                    .foregroundStyle(objColor)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { fltTextWidth = $0 }
+                    .offset(x: -fltOffset)
+                    .frame(width: objProxy.size.width, height: objProxy.size.height, alignment: .leading)
+                    .clipped()
+                    // Soft edges where text continues out of view.
+                    .mask(edgeFade(blnLeading: fltOffset > 0.5, blnTrailing: fltOffset < fltOverflow - 0.5))
+            }
+        }
+        .onChange(of: strText) { objCycleStart = Date() }
+        .onChange(of: blnRunning) { objCycleStart = Date() }
+    }
+
+    /// Scroll offset at a moment in the wait → glide → pause cycle.
+    /// - Parameters:
+    ///   - fltOverflow: How far the text extends past the frame.
+    ///   - objNow: Current time.
+    /// - Returns: Points to shift left.
+    private func offset(fltOverflow: CGFloat, objNow: Date) -> CGFloat {
+        guard fltOverflow > 0 else { return 0 }
+        let dblScroll = Double(fltOverflow / Self.fltSpeed)
+        let dblCycle = Self.dblStartHold + dblScroll + Self.dblEndHold
+        let dblT = objNow.timeIntervalSince(objCycleStart).truncatingRemainder(dividingBy: dblCycle)
+        if dblT < Self.dblStartHold { return 0 }
+        if dblT < Self.dblStartHold + dblScroll {
+            // Ease in and out so the glide doesn't start or stop abruptly.
+            let dblProgress = (dblT - Self.dblStartHold) / dblScroll
+            return fltOverflow * CGFloat((1 - cos(dblProgress * .pi)) / 2)
+        }
+        return fltOverflow
+    }
+
+    /// Mask that fades the edges where text is cut off.
+    /// - Parameters:
+    ///   - blnLeading: Text continues to the left.
+    ///   - blnTrailing: Text continues to the right.
+    /// - Returns: Mask view.
+    private func edgeFade(blnLeading: Bool, blnTrailing: Bool) -> some View {
+        LinearGradient(stops: [
+            .init(color: blnLeading ? .clear : .black, location: 0),
+            .init(color: .black, location: 0.08),
+            .init(color: .black, location: 0.88),
+            .init(color: blnTrailing ? .clear : .black, location: 1),
+        ], startPoint: .leading, endPoint: .trailing)
     }
 }

@@ -5,8 +5,10 @@ import SwiftUI
 struct NowPlayingTileView: View {
     let objNowPlaying: NowPlayingService
     let fltSize: CGFloat
-    /// Show the playing/paused glyph (the large tile has its own play button).
+    /// Show the playing/paused glyph (the large player has its own play button).
     var blnShowsState = true
+    /// Show a thin progress line along the bottom instead of the glyph (side-dock tile with a fly-out player).
+    var blnShowsProgress = false
 
     var body: some View {
         let fltCorner = fltSize * 0.22
@@ -17,8 +19,10 @@ struct NowPlayingTileView: View {
                 // Paused tracks look a little "off".
                 .saturation(objNowPlaying.blnIsPlaying ? 1 : 0.55)
 
-            // State glyph in the bottom-left corner.
-            if blnShowsState {
+            if blnShowsProgress {
+                progressLine
+            } else if blnShowsState {
+                // State glyph in the bottom-left corner.
                 VStack {
                     Spacer()
                     HStack {
@@ -59,6 +63,25 @@ struct NowPlayingTileView: View {
                     .resizable()
                     .interpolation(.high)
                     .frame(width: fltSize * 0.62, height: fltSize * 0.62)
+            }
+        }
+    }
+
+    /// Thin track-progress line near the bottom edge, advancing while playing.
+    private var progressLine: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { objContext in
+            let dblDuration = objNowPlaying.dblDuration
+            let dblFraction = dblDuration > 0 ? objNowPlaying.elapsed(at: objContext.date) / dblDuration : 0
+            let fltWidth = fltSize * 0.72
+            VStack {
+                Spacer()
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.3))
+                    Capsule().fill(Color.white).frame(width: fltWidth * CGFloat(min(1, max(0, dblFraction))))
+                }
+                .frame(width: fltWidth, height: max(2.5, fltSize * 0.055))
+                .shadow(color: .black.opacity(0.5), radius: 1.5)
+                .padding(.bottom, fltSize * 0.1)
             }
         }
     }

@@ -63,7 +63,7 @@ enum IndicatorStyle: String, CaseIterable, Identifiable {
 enum NowPlayingSize: String, CaseIterable, Identifiable {
     /// One icon: artwork with a state glyph (click to play/pause).
     case small
-    /// A tile with transport buttons, seek bar and volume (wide at the bottom, tall at the sides).
+    /// A player with large buttons and a seek bar (a tile at the bottom; a fly-out from a side dock).
     case large
 
     var id: String { rawValue }
@@ -73,6 +73,24 @@ enum NowPlayingSize: String, CaseIterable, Identifiable {
         switch self {
         case .small: "Small"
         case .large: "Large"
+        }
+    }
+}
+
+/// Look of the large player's seek bar.
+enum SeekBarStyle: String, CaseIterable, Identifiable {
+    /// The played part is a gently moving wave while playing.
+    case squiggly
+    /// A plain filled line.
+    case straight
+
+    var id: String { rawValue }
+
+    /// Label for the settings picker.
+    var strTitle: String {
+        switch self {
+        case .squiggly: "Squiggly"
+        case .straight: "Straight"
         }
     }
 }
@@ -229,6 +247,7 @@ final class SettingsStore {
         static let strShowNowPlaying = "ShowNowPlayingWidget"
         static let strShowBattery = "ShowBatteryWidget"
         static let strNowPlayingSize = "NowPlayingWidgetSize"
+        static let strSeekBarStyle = "NowPlayingSeekBarStyle"
     }
 
     /// Pins used on first launch.
@@ -323,8 +342,15 @@ final class SettingsStore {
     /// Small (icon) or large (controls) Now Playing widget.
     var enmNowPlayingSize: NowPlayingSize { didSet { objDefaults.set(enmNowPlayingSize.rawValue, forKey: Key.strNowPlayingSize) } }
 
-    /// Whether the large Now Playing tile is used (wide on a bottom dock, tall on a side dock).
-    var blnUsesLargeNowPlaying: Bool { enmNowPlayingSize == .large }
+    /// Squiggly or straight seek bar in the large player.
+    var enmSeekBarStyle: SeekBarStyle { didSet { objDefaults.set(enmSeekBarStyle.rawValue, forKey: Key.strSeekBarStyle) } }
+
+    /// Whether the large player sits in the dock as a wide tile (bottom dock only;
+    /// side docks keep a one-icon tile and show the player in a fly-out).
+    var blnUsesLargeNowPlaying: Bool { enmNowPlayingSize == .large && !enmPosition.blnIsVertical }
+
+    /// Whether hovering the Now Playing tile opens the fly-out player (large size on a side dock).
+    var blnUsesNowPlayingFlyout: Bool { enmNowPlayingSize == .large && enmPosition.blnIsVertical }
 
     /// Color wash over the glass.
     var enmTint: DockTint { didSet { objDefaults.set(enmTint.rawValue, forKey: Key.strTint) } }
@@ -380,6 +406,7 @@ final class SettingsStore {
             Key.strShowNowPlaying: true,
             Key.strShowBattery: true,
             Key.strNowPlayingSize: NowPlayingSize.large.rawValue,
+            Key.strSeekBarStyle: SeekBarStyle.squiggly.rawValue,
         ])
 
         fltIconSize = objDefaults.double(forKey: Key.strIconSize)
@@ -406,6 +433,7 @@ final class SettingsStore {
         blnShowNowPlaying = objDefaults.bool(forKey: Key.strShowNowPlaying)
         blnShowBattery = objDefaults.bool(forKey: Key.strShowBattery)
         enmNowPlayingSize = NowPlayingSize(rawValue: objDefaults.string(forKey: Key.strNowPlayingSize) ?? "") ?? .large
+        enmSeekBarStyle = SeekBarStyle(rawValue: objDefaults.string(forKey: Key.strSeekBarStyle) ?? "") ?? .squiggly
         enmTint = DockTint(rawValue: objDefaults.string(forKey: Key.strTint) ?? "") ?? .none
         strTintHex = objDefaults.string(forKey: Key.strTintHex) ?? "#3B82F6"
         fltTintStrength = objDefaults.double(forKey: Key.strTintStrength)

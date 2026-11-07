@@ -105,11 +105,18 @@ private struct AppearanceTab: View {
                 }
                 .pickerStyle(.segmented)
                 .disabled(!objSettings.blnShowNowPlaying)
+                Picker("Seek bar", selection: $objSettings.enmSeekBarStyle) {
+                    ForEach(SeekBarStyle.allCases) { enmStyle in
+                        Text(enmStyle.strTitle).tag(enmStyle)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(!objSettings.blnShowNowPlaying || objSettings.enmNowPlayingSize != .large)
                 Toggle("Battery", isOn: $objSettings.blnShowBattery)
             } header: {
                 Text("Widgets")
             } footer: {
-                Text("Now Playing appears while music or a video is playing or paused. Small is a single tile: click to play or pause, right-click to skip. Large adds previous/next, a seek bar, mute and volume (wide at the bottom, tall on a side dock). Battery shows the charge; click it for Battery settings.")
+                Text("Now Playing appears while music or a video is playing or paused. Small is a single tile: click to play or pause, right-click to skip. Large shows the artwork, title, artist, large previous/play/next buttons and a seek bar: right in a bottom dock, or in a player that slides out when you hover the tile on a side dock. Battery shows the charge; click it for Battery settings.")
                     .foregroundStyle(.secondary)
             }
         }

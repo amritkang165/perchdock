@@ -27,7 +27,12 @@ final class DockController {
     private let objWindowService: WindowService
     private let objNewWindowTracker: NewWindowTracker
     private let objNowPlaying: NowPlayingService
-    private let objVolume: SystemVolumeService
+    /// Hover/press/seek state for the large player (dock tile and side-dock fly-out).
+    private let objPlayerInteraction: NowPlayingInteraction
+    /// Large player beside a side dock, shown while hovering the Now Playing tile.
+    private let objFlyout: NowPlayingFlyoutController
+    private var objShowFlyoutTask: Task<Void, Never>?
+    private var objHideFlyoutTask: Task<Void, Never>?
     private let objSettings: SettingsStore
     private let objState = DockState()
     private let objPanel: DockPanel
@@ -78,9 +83,6 @@ final class DockController {
     // Press/drag tracking.
     private var objPressPoint: CGPoint?
     private var intPressIndex: Int?
-    /// Control pressed on the large Now Playing tile (the press won't become a click or drag).
-    private var enmPressedControl: NowPlayingLargeLayout.Control?
-
     /// Wires the panel, picker, app tracker and settings together.
     /// - Parameters:
     ///   - objTracker: Source of dock items.
@@ -97,14 +99,16 @@ final class DockController {
         objBadges: DockBadgeService,
         objNowPlaying: NowPlayingService,
         objBattery: BatteryService,
-        objVolume: SystemVolumeService,
         objSettings: SettingsStore
     ) {
         self.objTracker = objTracker
         self.objWindowService = objWindowService
         self.objNewWindowTracker = objNewWindowTracker
         self.objNowPlaying = objNowPlaying
-        self.objVolume = objVolume
+        let objPlayerInteraction = NowPlayingInteraction(objNowPlaying: objNowPlaying)
+        self.objPlayerInteraction = objPlayerInteraction
+        objFlyout = NowPlayingFlyoutController(objNowPlaying: objNowPlaying, objInteraction: objPlayerInteraction,
+                                               objSettings: objSettings)
         self.objSettings = objSettings
         objPicker = WindowPickerController(objThumbnailService: objThumbnailService)
 
@@ -117,7 +121,7 @@ final class DockController {
             objBadges: objBadges,
             objNowPlaying: objNowPlaying,
             objBattery: objBattery,
-            objVolume: objVolume
+            objPlayerInteraction: objPlayerInteraction
         ))
         objPanel.contentView = objHostingView
         objHostingView.enableFileDrops()
@@ -169,6 +173,16 @@ final class DockController {
 
         objPicker.onMouseInsideChanged = { [weak self] blnInside in
             self?.handlePickerHover(blnInside)
+        }
+        objFlyout.onMouseInsideChanged = { [weak self] blnInside in
+            guard let self else { return }
+            // Keep the dock up while using the player; leaving it starts the hide grace.
+            if blnInside {
+                self.objHideFlyoutTask?.cancel()
+            } else {
+                self.updateFlyout(objScreenPoint: NSEvent.mouseLocation, intSlot: nil)
+            }
+            self.updateAutoHide()
         }
         objPicker.onSelectWindow = { [weak self] objWindow in
             self?.handlePickerSelection(objWindow)
@@ -262,9 +276,8 @@ final class DockController {
             objPressPoint = nil
             intPressIndex = nil
         }
-        enmPressedControl = nil
-        objState.enmWidgetScrub = nil
-        objState.enmWidgetHover = nil
+        hideFlyout()
+        objPlayerInteraction.cancel()
         objState.intHoveredIndex = nil
         objState.fltMouseMain = nil
         updateAutoHide()
@@ -350,6 +363,7 @@ final class DockController {
         objState.fltMouseMain = nil
         hidePicker()
         objGrid.hide()
+        hideFlyout()
         objPicker.enmPosition = objSettings.enmPosition
 
         let objFrame = objGeometry.panelFrame(in: objScreen.frame, blnShown: blnShown)
@@ -409,6 +423,7 @@ final class DockController {
         updateHoveredIndex(intSlot)
         updateHoverLabel()
         updateWidgetHover(blnOverDock ? panelPoint(fromScreen: objScreenPoint) : nil)
+        updateFlyout(objScreenPoint: objScreenPoint, intSlot: intSlot)
 
         // Hidden dock: watch for the cursor reaching the screen edge.
         if objSettings.blnAutoHide && !blnShown {
@@ -424,6 +439,7 @@ final class DockController {
     /// nothing is hovered.
     private func updateHoverLabel() {
         guard objSettings.blnShowLabels, blnShown, !objPicker.blnIsVisible, !objGrid.blnIsVisible, objState.objDrag == nil,
+              !objFlyout.blnIsVisible,
               let intIndex = objState.intHoveredIndex,
               let objItem = objTracker.arrObjItems[safe: intIndex], !objItem.blnIsDivider,
               // The wide tile shows its own title; the tall one relies on the label.
@@ -515,6 +531,7 @@ final class DockController {
         }
 
         let blnInUse = blnMouseOverDock || objPicker.blnMouseInside || objGrid.blnIsVisible || blnMenuOpen || objState.objDrag != nil
+            || objFlyout.blnMouseInside
         if blnInUse || !blnShown {
             objAutoHideTask?.cancel()
             objAutoHideTask = nil
@@ -606,24 +623,17 @@ final class DockController {
         objShowPickerTask?.cancel()
 
         // Large Now Playing tile: the press belongs to one of its controls.
-        enmPressedControl = largeTileControl(atPanelPoint: objPoint)
-        switch enmPressedControl {
-        case .seek(let dblFraction):
-            objState.enmWidgetScrub = .seek(dblFraction)
-        case .volume(let fltLevel):
-            objState.enmWidgetScrub = .volume(fltLevel)
-            objVolume.setVolume(fltLevel)
-        default:
-            break
-        }
+        objPlayerInteraction.press(largeTileControl(atPanelPoint: objPoint))
     }
 
     /// Starts or updates a drag-reorder once the press has moved far enough.
     /// - Parameter objPoint: Panel-local point (may be outside the panel).
     private func handleMouseDragged(_ objPoint: CGPoint) {
-        // Dragging on the large Now Playing tile scrubs its bars instead.
-        if let enmPressedControl {
-            scrubWidget(enmPressedControl, atPanelPoint: objPoint)
+        // Dragging on the large Now Playing tile scrubs its seek bar instead.
+        if objPlayerInteraction.blnIsPressing {
+            if let (objLayout, objLocal) = largeTileLocal(objPoint) {
+                objPlayerInteraction.drag(toSeekFraction: objLayout.seekFraction(at: objLocal))
+            }
             return
         }
         guard let objPressPoint, let intPressIndex,
@@ -813,12 +823,11 @@ final class DockController {
         defer {
             objPressPoint = nil
             intPressIndex = nil
-            enmPressedControl = nil
             handleMouse(at: NSEvent.mouseLocation)
         }
 
-        if let enmPressedControl {
-            performWidgetControl(enmPressedControl)
+        if objPlayerInteraction.blnIsPressing {
+            objPlayerInteraction.release()
             return
         }
         if let objDrag = objState.objDrag {
@@ -927,7 +936,7 @@ final class DockController {
     // MARK: - Large Now Playing tile
 
     /// Converts a panel point into the large Now Playing tile's local coordinates
-    /// (top-left origin, screen orientation), if the tile is in the dock.
+    /// (top-left origin), if the tile is in the (bottom) dock.
     /// - Parameter objPoint: Panel-local point.
     /// - Returns: Tile layout and local point, or `nil` without a large tile.
     private func largeTileLocal(_ objPoint: CGPoint) -> (objLayout: NowPlayingLargeLayout, objLocal: CGPoint)? {
@@ -936,21 +945,10 @@ final class DockController {
         let objLayout = objGeometry.nowPlayingLayout
         let fltCenter = objGeometry.layout(mouseMain: objState.fltMouseMain).arrFltCenters[safe: intIndex]
             ?? objGeometry.baseCenter(intIndex)
-        let fltStartMain = fltCenter - objLayout.fltMainLength / 2
-        // The tile spans one icon across the bar, centered on the icon row.
-        let fltIconCross = objGeometry.iconCross(forSize: objGeometry.fltIconSize)
-        let fltNearCross = fltIconCross - objGeometry.fltIconSize / 2
-        let fltFarCross = fltIconCross + objGeometry.fltIconSize / 2
-
+        // Main runs left→right; cross grows upward from the bottom edge to the tile's top.
+        let fltTopCross = objGeometry.iconCross(forSize: objGeometry.fltIconSize) + objGeometry.fltIconSize / 2
         let (fltMain, fltCross) = objGeometry.mainCross(fromPanelPoint: objPoint)
-        let objLocal: CGPoint = switch objGeometry.enmPosition {
-        // Main runs left→right; cross grows upward (away from the bottom edge).
-        case .bottom: CGPoint(x: fltMain - fltStartMain, y: fltFarCross - fltCross)
-        // Main runs top→bottom; cross grows rightward on the left edge, leftward on the right.
-        case .left: CGPoint(x: fltCross - fltNearCross, y: fltMain - fltStartMain)
-        case .right: CGPoint(x: fltFarCross - fltCross, y: fltMain - fltStartMain)
-        }
-        return (objLayout, objLocal)
+        return (objLayout, CGPoint(x: fltMain - (fltCenter - objLayout.fltWidth / 2), y: fltTopCross - fltCross))
     }
 
     /// Control of the large Now Playing tile under a panel point.
@@ -959,73 +957,100 @@ final class DockController {
     private func largeTileControl(atPanelPoint objPoint: CGPoint) -> NowPlayingLargeLayout.Control? {
         guard let (objLayout, objLocal) = largeTileLocal(objPoint),
               objLocal.x >= 0, objLocal.x <= objLayout.fltWidth, objLocal.y >= 0, objLocal.y <= objLayout.fltHeight else { return nil }
-        let enmControl = objLayout.control(at: objLocal)
-        // Nothing to seek in a live stream (the bar isn't drawn).
-        if case .seek = enmControl, objNowPlaying.dblDuration <= 0 { return nil }
-        if case .volume = enmControl, !objVolume.blnHasVolume { return nil }
-        if enmControl == .mute, !objVolume.blnHasVolume { return nil }
-        return enmControl
+        return objLayout.control(at: objLocal)
     }
 
-    /// Updates the hover highlight on the large tile (bars count as one target).
+    /// Updates the hover highlight on the large tile.
     /// - Parameter objPoint: Panel-local cursor point, or `nil` when off the dock.
     private func updateWidgetHover(_ objPoint: CGPoint?) {
-        var enmHover = objPoint.flatMap { largeTileControl(atPanelPoint: $0) }
-        // Bar positions change with every pixel; the highlight only cares which bar.
-        switch enmHover {
-        case .seek: enmHover = .seek(0)
-        case .volume: enmHover = .volume(0)
-        default: break
-        }
-        if objState.enmWidgetHover != enmHover {
-            objState.enmWidgetHover = enmHover
-        }
+        // The fly-out reports its own hover; don't clear it from here.
+        guard !objFlyout.blnMouseInside else { return }
+        objPlayerInteraction.hover(objPoint.flatMap { largeTileControl(atPanelPoint: $0) })
     }
 
-    /// Follows a drag along the seek or volume bar (volume applies live; seek on release).
+    // MARK: - Side-dock fly-out player
+
+    /// Whether an item is the Now Playing tile that opens the fly-out (large size, side dock).
+    /// - Parameter intIndex: Item index.
+    /// - Returns: `true` for that tile.
+    private func isFlyoutTile(_ intIndex: Int?) -> Bool {
+        guard objSettings.blnUsesNowPlayingFlyout, let intIndex,
+              let objItem = objTracker.arrObjItems[safe: intIndex] else { return false }
+        return objItem.enmWidget == .nowPlaying
+    }
+
+    /// Opens the fly-out after hovering the tile briefly, and closes it shortly after
+    /// the cursor leaves both the tile and the fly-out (crossing the gap between is fine).
     /// - Parameters:
-    ///   - enmControl: Control the press started on.
-    ///   - objPoint: Panel-local cursor point.
-    private func scrubWidget(_ enmControl: NowPlayingLargeLayout.Control, atPanelPoint objPoint: CGPoint) {
-        guard let (objLayout, objLocal) = largeTileLocal(objPoint) else { return }
-        switch enmControl {
-        case .seek:
-            objState.enmWidgetScrub = .seek(objLayout.seekFraction(at: objLocal))
-        case .volume:
-            let fltLevel = objLayout.volumeLevel(at: objLocal)
-            objState.enmWidgetScrub = .volume(fltLevel)
-            objVolume.setVolume(fltLevel)
-        default:
-            break
+    ///   - objScreenPoint: Cursor location.
+    ///   - intSlot: Item under the cursor, if any.
+    private func updateFlyout(objScreenPoint: CGPoint, intSlot: Int?) {
+        if isFlyoutTile(intSlot), let intSlot {
+            objHideFlyoutTask?.cancel()
+            objHideFlyoutTask = nil
+            if objFlyout.blnIsVisible {
+                return
+            }
+            guard objShowFlyoutTask == nil else { return }
+            objShowFlyoutTask = Task { [weak self] in
+                guard let self else { return }
+                try? await Task.sleep(for: .seconds(self.objSettings.fltPreviewDelay))
+                self.objShowFlyoutTask = nil
+                guard !Task.isCancelled, self.isFlyoutTile(self.objState.intHoveredIndex),
+                      self.objState.intHoveredIndex == intSlot else { return }
+                self.showFlyout(forIndex: intSlot)
+            }
+            return
+        }
+
+        objShowFlyoutTask?.cancel()
+        objShowFlyoutTask = nil
+        guard objFlyout.blnIsVisible, !objFlyout.blnMouseInside, !objPlayerInteraction.blnIsPressing else { return }
+        // Moving through the gap toward the fly-out keeps it open.
+        if objFlyout.objFrame.union(flyoutTileFrame()).insetBy(dx: -4, dy: -4).contains(objScreenPoint) { return }
+        guard objHideFlyoutTask == nil else { return }
+        objHideFlyoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self, !Task.isCancelled else { return }
+            self.objHideFlyoutTask = nil
+            guard !self.objFlyout.blnMouseInside, !self.objPlayerInteraction.blnIsPressing else { return }
+            self.hideFlyout()
         }
     }
 
-    /// Runs a large-tile control on release.
-    /// - Parameter enmControl: Control the press started on.
-    private func performWidgetControl(_ enmControl: NowPlayingLargeLayout.Control) {
-        let enmScrub = objState.enmWidgetScrub
-        objState.enmWidgetScrub = nil
-        switch enmControl {
-        case .artwork:
-            // Bring the player forward (e.g. Spotify, Music, the browser tab's app).
-            if let strBundleId = objNowPlaying.objTrack?.strBundleId,
-               let objApp = NSRunningApplication.runningApplications(withBundleIdentifier: strBundleId).first {
-                objApp.activate()
-            }
-        case .previous:
-            objNowPlaying.send(.previousTrack)
-        case .playPause:
-            objNowPlaying.send(.togglePlayPause)
-        case .next:
-            objNowPlaying.send(.nextTrack)
-        case .mute:
-            objVolume.setMuted(!objVolume.blnIsMuted)
-        case .seek(let dblPressFraction):
-            let dblFraction: Double = if case .seek(let dblScrub) = enmScrub { dblScrub } else { dblPressFraction }
-            objNowPlaying.seek(to: dblFraction * objNowPlaying.dblDuration)
-        case .volume:
-            break
-        }
+    /// Opens the fly-out beside the tile.
+    /// - Parameter intIndex: Now Playing tile index.
+    private func showFlyout(forIndex intIndex: Int) {
+        let objGeometry = self.objGeometry
+        let fltCenter = objGeometry.layout(mouseMain: objState.fltMouseMain).arrFltCenters[safe: intIndex]
+            ?? objGeometry.baseCenter(intIndex)
+        // Just past the bar's outer edge, level with the tile.
+        let objAnchor = screenPoint(main: fltCenter, cross: objGeometry.fltBarThickness + 2)
+        objHoverLabel.hide()
+        objFlyout.show(objAnchor: objAnchor, enmPosition: objSettings.enmPosition)
+    }
+
+    /// Closes the fly-out and cancels pending show/hide.
+    private func hideFlyout() {
+        objShowFlyoutTask?.cancel()
+        objShowFlyoutTask = nil
+        objHideFlyoutTask?.cancel()
+        objHideFlyoutTask = nil
+        objFlyout.hide()
+    }
+
+    /// Screen frame of the Now Playing tile on a side dock (for the hover corridor).
+    /// - Returns: Tile frame, or `.zero` without one.
+    private func flyoutTileFrame() -> CGRect {
+        guard let intIndex = objTracker.arrObjItems.firstIndex(where: { $0.enmWidget == .nowPlaying }) else { return .zero }
+        let objGeometry = self.objGeometry
+        let fltCenter = objGeometry.layout(mouseMain: objState.fltMouseMain).arrFltCenters[safe: intIndex]
+            ?? objGeometry.baseCenter(intIndex)
+        let fltHalf = objGeometry.fltIconSize / 2
+        let objNear = screenPoint(main: fltCenter - fltHalf, cross: 0)
+        let objFar = screenPoint(main: fltCenter + fltHalf, cross: objGeometry.fltBarThickness + 2)
+        return CGRect(x: min(objNear.x, objFar.x), y: min(objNear.y, objFar.y),
+                      width: abs(objFar.x - objNear.x), height: abs(objFar.y - objNear.y))
     }
 
     /// Opens a recent document in the app it was listed under (bouncing if it launches).
@@ -2400,6 +2425,16 @@ final class DockController {
     func debugPreviewGridTile(_ intTile: Int) {
         guard let objMember = arrObjGridMembers[safe: intTile] else { return }
         showGridPicker(for: objMember, intTile: intTile)
+    }
+
+    /// Debug aid: opens the side-dock Now Playing fly-out, as if its tile were hovered.
+    /// - Returns: Whether it opened (needs the large size, a side dock and something playing).
+    @discardableResult
+    func debugShowFlyout() -> Bool {
+        guard objSettings.blnUsesNowPlayingFlyout,
+              let intIndex = objTracker.arrObjItems.firstIndex(where: { $0.enmWidget == .nowPlaying }) else { return false }
+        showFlyout(forIndex: intIndex)
+        return true
     }
 
     /// Debug aid: peeks at a card in the open picker, as if it were hovered.
