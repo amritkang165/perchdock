@@ -2244,8 +2244,9 @@ final class DockController {
         objShowPickerTask = Task { [weak self] in
             guard let self else { return }
             if self.objPicker.blnIsVisible {
-                // Crossing other tiles on the way to the open picker: hold it.
-                await self.waitWhileHeadingToPicker()
+                // The picker opens beside the whole grid, so reaching it often means sweeping
+                // across other tiles. Only switch once the cursor actually settles on this one.
+                await self.waitForCursorRest()
             } else {
                 try? await Task.sleep(for: .seconds(self.objSettings.fltPreviewDelay))
             }
@@ -2346,6 +2347,24 @@ final class DockController {
             let objPoint = NSEvent.mouseLocation
             guard !objPicker.blnMouseInside, isHeadingToPicker(objPoint) else { return }
             if hypot(objPoint.x - objLastPoint.x, objPoint.y - objLastPoint.y) > 1 {
+                objLastPoint = objPoint
+                objLastMove = .now
+            } else if ContinuousClock.now - objLastMove >= Self.objIntentRestTime {
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+    }
+
+    /// Waits until the cursor stops moving (stays within a couple of points for
+    /// `objIntentRestTime`), or it enters the picker, or the task is cancelled.
+    private func waitForCursorRest() async {
+        var objLastPoint = NSEvent.mouseLocation
+        var objLastMove = ContinuousClock.now
+
+        while !Task.isCancelled, !objPicker.blnMouseInside {
+            let objPoint = NSEvent.mouseLocation
+            if hypot(objPoint.x - objLastPoint.x, objPoint.y - objLastPoint.y) > 2 {
                 objLastPoint = objPoint
                 objLastMove = .now
             } else if ContinuousClock.now - objLastMove >= Self.objIntentRestTime {
