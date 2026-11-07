@@ -13,10 +13,11 @@ struct GlassBackground: ViewModifier {
     /// - Returns: The decorated view.
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
-            // The tint is a color layer on the glass; the glass's own tint is too faint to notice.
+            // The tint is a color layer between the glass and the content (the glass's
+            // own tint is too faint to notice; an overlay would tint the icons too).
             content
+                .background(RoundedRectangle(cornerRadius: fltCornerRadius).fill(objTint ?? .clear).allowsHitTesting(false))
                 .glassEffect(.regular, in: .rect(cornerRadius: fltCornerRadius))
-                .overlay(RoundedRectangle(cornerRadius: fltCornerRadius).fill(objTint ?? .clear).allowsHitTesting(false))
         } else {
             content
                 .background(.ultraThinMaterial, in: .rect(cornerRadius: fltCornerRadius))
