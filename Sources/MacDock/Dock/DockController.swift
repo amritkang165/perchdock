@@ -454,14 +454,28 @@ final class DockController {
     /// - Parameters:
     ///   - objScreenPoint: Cursor location.
     ///   - objTargetScreen: Screen to test (defaults to the dock's screen).
-    /// - Returns: `true` within 1pt of that screen's dock edge.
+    /// - Returns: `true` within 1pt of that screen's dock edge, excluding the screen
+    ///   corners at either end so hot corners stay usable.
     private func isAtDockEdge(_ objScreenPoint: CGPoint, of objTargetScreen: NSScreen? = nil) -> Bool {
         guard let objFrame = (objTargetScreen ?? objScreen)?.frame,
               objFrame.insetBy(dx: -1, dy: -1).contains(objScreenPoint) else { return false }
+
+        // Hot corners fire at the corner pixel; revealing (or re-docking) there pulls the
+        // pointer's target out from under them, so the edge ends this far short of each corner.
+        let fltCornerMargin: CGFloat = 24
+
         switch objSettings.enmPosition {
-        case .bottom: return objScreenPoint.y <= objFrame.minY + 1
-        case .left: return objScreenPoint.x <= objFrame.minX + 1
-        case .right: return objScreenPoint.x >= objFrame.maxX - 1
+        case .bottom:
+            return objScreenPoint.y <= objFrame.minY + 1
+                && objScreenPoint.x > objFrame.minX + fltCornerMargin
+                && objScreenPoint.x < objFrame.maxX - fltCornerMargin
+        case .left, .right:
+            let blnOnEdge = objSettings.enmPosition == .left
+                ? objScreenPoint.x <= objFrame.minX + 1
+                : objScreenPoint.x >= objFrame.maxX - 1
+            return blnOnEdge
+                && objScreenPoint.y > objFrame.minY + fltCornerMargin
+                && objScreenPoint.y < objFrame.maxY - fltCornerMargin
         }
     }
 
