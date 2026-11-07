@@ -74,8 +74,15 @@ struct DockGeometry {
 
     var fltPanelLength: CGFloat { fltBaseLength + fltSideMargin * 2 }
 
-    /// Panel thickness: the bar plus headroom for the tallest magnified icon.
-    var fltPanelThickness: CGFloat { fltBarThickness + ceil(fltIconSize * (fltMagnification - 1)) + 4 }
+    /// How high a bouncing icon jumps (launching, or a new notification).
+    var fltBounceHeight: CGFloat { (fltIconSize * 0.45).rounded() }
+
+    /// Interactive thickness: the bar plus headroom for the tallest magnified icon.
+    /// Only this part catches the mouse; the rest of the panel is click-through.
+    var fltHoverThickness: CGFloat { fltBarThickness + ceil(fltIconSize * (fltMagnification - 1)) + 4 }
+
+    /// Panel thickness: room for magnified icons and for bounces.
+    var fltPanelThickness: CGFloat { max(fltHoverThickness, fltBarThickness + fltBounceHeight + 4) }
 
     /// Panel size in screen orientation.
     var objPanelSize: CGSize {

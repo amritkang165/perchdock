@@ -60,12 +60,14 @@ final class DockController {
     ///   - objWindowService: Window listing and raising.
     ///   - objThumbnailService: Window thumbnails for the picker.
     ///   - objNewWindowTracker: Flags recently opened windows.
+    ///   - objBadges: Notification badges and progress from the system Dock.
     ///   - objSettings: User preferences.
     init(
         objTracker: AppTracker,
         objWindowService: WindowService,
         objThumbnailService: ThumbnailService,
         objNewWindowTracker: NewWindowTracker,
+        objBadges: DockBadgeService,
         objSettings: SettingsStore
     ) {
         self.objTracker = objTracker
@@ -79,7 +81,8 @@ final class DockController {
             objTracker: objTracker,
             objSettings: objSettings,
             objState: objState,
-            objNewWindowTracker: objNewWindowTracker
+            objNewWindowTracker: objNewWindowTracker,
+            objBadges: objBadges
         ))
         objPanel.contentView = objHostingView
         objHostingView.enableFileDrops()
@@ -266,7 +269,7 @@ final class DockController {
         // "Over the dock" = over the bar, or over a magnified icon poking above it.
         let blnOverDock = blnShown
             && fltMain >= objLayout.fltBarStart && fltMain <= objLayout.fltBarEnd
-            && fltCross >= -1 && fltCross <= objGeometry.fltPanelThickness
+            && fltCross >= -1 && fltCross <= objGeometry.fltHoverThickness
 
         // Let clicks fall through the transparent margins to windows underneath.
         objPanel.ignoresMouseEvents = !blnOverDock
@@ -564,10 +567,13 @@ final class DockController {
         objShowPickerTask?.cancel()
         let objAppUrl = objItem.objAppUrl ?? objItem.objRunningApp?.bundleURL
 
-        // Not running: launch it.
+        // Not running: launch it (bouncing until it's up).
         guard let objApp = objItem.objRunningApp, !objApp.isTerminated else {
             hidePicker()
-            if let objAppUrl { objWindowService.open(objAppUrl) }
+            if let objAppUrl {
+                objWindowService.open(objAppUrl)
+                trackLaunch(of: objItem.strBundleId)
+            }
             return
         }
 
@@ -600,6 +606,25 @@ final class DockController {
         } else {
             resetCycle()
             objWindowService.raise(arrObjWindows[0], of: objApp)
+        }
+    }
+
+    /// Longest an icon keeps bouncing for a slow launch.
+    private static let objMaxLaunchBounce: Duration = .seconds(15)
+
+    /// Bounces an icon until its app finishes launching (or a timeout).
+    /// - Parameter strBundleId: App being launched.
+    private func trackLaunch(of strBundleId: String) {
+        objState.setStrLaunching.insert(strBundleId)
+        Task { [weak self] in
+            let objDeadline = ContinuousClock.now + Self.objMaxLaunchBounce
+            while ContinuousClock.now < objDeadline {
+                try? await Task.sleep(for: .milliseconds(250))
+                let blnFinished = NSRunningApplication.runningApplications(withBundleIdentifier: strBundleId)
+                    .contains { $0.isFinishedLaunching }
+                if blnFinished { break }
+            }
+            self?.objState.setStrLaunching.remove(strBundleId)
         }
     }
 

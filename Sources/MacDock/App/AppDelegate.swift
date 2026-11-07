@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let objWindowService = WindowService()
     private let objThumbnailService = ThumbnailService()
     private let objNewWindowTracker = NewWindowTracker()
+    private let objDockBadges = DockBadgeService()
     private let objNativeDock = NativeDockController()
     private lazy var objSettingsWindow = SettingsWindowController(objSettings: objSettings, objThumbnailService: objThumbnailService)
     private var objDockController: DockController?
@@ -32,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         objAppTracker.start()
         objNewWindowTracker.start()
+        objDockBadges.start()
         // Raising a window from the dock means the user has seen it.
         objWindowService.onRaised = { [weak self] intWindowId in
             self?.objNewWindowTracker.markSeen(intWindowId)
@@ -42,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             objWindowService: objWindowService,
             objThumbnailService: objThumbnailService,
             objNewWindowTracker: objNewWindowTracker,
+            objBadges: objDockBadges,
             objSettings: objSettings
         )
         objController.show()
@@ -143,6 +146,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if arrStrArgs.contains("--open-settings") {
             objSettingsWindow.show()
+        }
+        if arrStrArgs.contains("--fake-badges") {
+            objDockBadges.debugFake(strBadgeId: "com.google.Chrome", strProgressId: "com.apple.finder")
+        }
+        if arrStrArgs.contains("--dump-dock") {
+            objDockBadges.debugDump(objLogger: Logger(subsystem: "com.slynck.macdock", category: "dump"))
         }
         if arrStrArgs.contains("--dump-windows") {
             let objLogger = Logger(subsystem: "com.slynck.macdock", category: "dump")

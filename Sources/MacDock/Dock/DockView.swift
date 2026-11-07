@@ -11,6 +11,102 @@ final class DockState {
     var intHoveredIndex: Int?
     /// In-progress drag, if any.
     var objDrag: DockDrag?
+    /// Apps launched from the dock that haven't finished launching (they bounce).
+    var setStrLaunching: Set<String> = []
+}
+
+/// One dock icon with its notification badge, progress bar and bounces.
+private struct DockIconView: View {
+    let objIcon: NSImage
+    let fltSize: CGFloat
+    let strBadge: String?
+    let fltProgress: Double?
+    let blnLaunching: Bool
+    let intAttention: Int
+    let fltBounceHeight: CGFloat
+    /// Unit vector pointing away from the screen edge, in view coordinates.
+    let objBounceDirection: CGVector
+
+    var body: some View {
+        Image(nsImage: objIcon)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: fltSize, height: fltSize)
+            .overlay(alignment: .topTrailing) {
+                if let strBadge {
+                    badge(strBadge)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let fltProgress {
+                    progressBar(fltProgress)
+                }
+            }
+            // Two quick hops when the app asks for attention.
+            .keyframeAnimator(initialValue: 0.0, trigger: intAttention) { objContent, fltLift in
+                objContent.offset(x: objBounceDirection.dx * fltLift, y: objBounceDirection.dy * fltLift)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    CubicKeyframe(fltBounceHeight, duration: 0.17)
+                    CubicKeyframe(0, duration: 0.17)
+                    CubicKeyframe(fltBounceHeight * 0.55, duration: 0.14)
+                    CubicKeyframe(0, duration: 0.14)
+                }
+            }
+            .modifier(LaunchBounce(blnActive: blnLaunching, fltHeight: fltBounceHeight, objDirection: objBounceDirection))
+    }
+
+    /// Red capsule with the badge text, scaled to the icon.
+    /// - Parameter strText: Badge text.
+    /// - Returns: The badge view.
+    private func badge(_ strText: String) -> some View {
+        let fltHeight = max(14, fltSize * 0.36)
+        return Text(strText)
+            .font(.system(size: fltHeight * 0.68, weight: .semibold))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .padding(.horizontal, fltHeight * 0.28)
+            .frame(minWidth: fltHeight, minHeight: fltHeight, maxHeight: fltHeight)
+            .background(Capsule().fill(Color.red))
+            .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+            .offset(x: fltHeight * 0.25, y: -fltHeight * 0.2)
+    }
+
+    /// Thin progress bar along the bottom of the icon.
+    /// - Parameter fltValue: Progress 0…1.
+    /// - Returns: The bar view.
+    private func progressBar(_ fltValue: Double) -> some View {
+        let fltWidth = fltSize * 0.8
+        return ZStack(alignment: .leading) {
+            Capsule().fill(Color.black.opacity(0.45))
+            Capsule().fill(Color.accentColor).frame(width: fltWidth * fltValue)
+        }
+        .frame(width: fltWidth, height: max(3, fltSize * 0.08))
+        .padding(.bottom, fltSize * 0.06)
+    }
+}
+
+/// Repeating bounce while an app launches.
+private struct LaunchBounce: ViewModifier {
+    let blnActive: Bool
+    let fltHeight: CGFloat
+    let objDirection: CGVector
+
+    /// Applies the looping hop only while launching.
+    /// - Parameter content: The icon.
+    /// - Returns: The icon, bouncing if active.
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if blnActive {
+            content.phaseAnimator([0.0, 1.0]) { objContent, fltPhase in
+                objContent.offset(x: objDirection.dx * fltHeight * fltPhase, y: objDirection.dy * fltHeight * fltPhase)
+            } animation: { fltPhase in
+                fltPhase == 1 ? .easeOut(duration: 0.3) : .easeIn(duration: 0.3)
+            }
+        } else {
+            content
+        }
+    }
 }
 
 /// The dock: a glass bar with icons placed at exact positions, so magnification,
@@ -20,6 +116,16 @@ struct DockView: View {
     let objSettings: SettingsStore
     let objState: DockState
     let objNewWindowTracker: NewWindowTracker
+    let objBadges: DockBadgeService
+
+    /// Direction icons hop: away from the screen edge.
+    private var bounceDirection: CGVector {
+        switch objSettings.enmPosition {
+        case .bottom: CGVector(dx: 0, dy: -1)
+        case .left: CGVector(dx: 1, dy: 0)
+        case .right: CGVector(dx: -1, dy: 0)
+        }
+    }
 
     var body: some View {
         let arrObjItems = objTracker.arrObjItems
@@ -43,10 +149,16 @@ struct DockView: View {
                 let fltSize = objLayout.arrFltSizes[safe: intIndex] ?? objGeometry.fltIconSize
                 let blnIsDragged = objState.objDrag?.intIndex == intIndex
 
-                Image(nsImage: objItem.objIcon)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: fltSize, height: fltSize)
+                DockIconView(
+                    objIcon: objItem.objIcon,
+                    fltSize: fltSize,
+                    strBadge: objBadges.dictStrBadges[objItem.strBundleId],
+                    fltProgress: objBadges.dictFltProgress[objItem.strBundleId],
+                    blnLaunching: objState.setStrLaunching.contains(objItem.strBundleId),
+                    intAttention: objBadges.dictIntAttention[objItem.strBundleId] ?? 0,
+                    fltBounceHeight: objGeometry.fltBounceHeight,
+                    objBounceDirection: bounceDirection
+                )
                     // The dragged icon is drawn by the floating drag panel instead.
                     .opacity(blnIsDragged ? 0 : 1)
                     .position(objGeometry.viewPoint(main: fltCenter, cross: objGeometry.iconCross(forSize: fltSize)))
