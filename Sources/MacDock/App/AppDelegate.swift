@@ -178,6 +178,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 try? await Task.sleep(for: .seconds(fltDelay))
                 objController.debugShowPicker(atIndex: intIndex)
+                // Optional `--peek=CARD`: then peek at that card.
+                if let strPeek = arrStrArgs.first(where: { $0.hasPrefix("--peek=") }),
+                   let intCard = Int(strPeek.dropFirst("--peek=".count)) {
+                    // Cards load asynchronously; wait up to ~4 s for this one.
+                    for _ in 0..<40 where !objController.debugPeek(atCard: intCard) {
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                }
             }
         }
         if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--preview-group=") }),

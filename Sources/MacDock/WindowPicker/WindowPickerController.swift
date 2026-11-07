@@ -40,6 +40,11 @@ final class WindowPickerController {
     /// Fired when the user middle-clicks a card.
     var onMiddleClickWindow: ((WindowInfo) -> Void)?
 
+    /// Fired when the hovered card changes (`nil` when no card is hovered), for peeking.
+    var onHoverWindow: ((WindowInfo?) -> Void)?
+    /// Card last reported to `onHoverWindow`.
+    private var intHoveredCardId: Int?
+
     /// Fired when the user right-clicks a card.
     var onRightClickWindow: ((WindowInfo, NSEvent) -> Void)?
 
@@ -139,6 +144,7 @@ final class WindowPickerController {
         guard blnIsVisible else { return }
         blnIsVisible = false
         blnMouseInside = false
+        reportHoveredWindow(nil)
         intAnchorIndex = nil
         objThumbnailTask?.cancel()
         objLivePreviewService.stop()
@@ -165,6 +171,7 @@ final class WindowPickerController {
     private func present(strAppName: String, intAnchorIndex: Int, objAnchorPoint: CGPoint) {
         objState.strAppName = strAppName
         objState.objHoveredHit = nil
+        reportHoveredWindow(nil)
         self.intAnchorIndex = intAnchorIndex
         objLastAnchorPoint = objAnchorPoint
 
@@ -284,12 +291,40 @@ final class WindowPickerController {
                 objState.objHoveredHit = objHit
             }
         }
+        // The card (or its close button) under the cursor, for peeking.
+        let objHoveredWindow: WindowInfo? = switch objHit {
+        case .card(let intIndex), .close(let intIndex): objState.arrObjWindows[safe: intIndex]
+        default: nil
+        }
+        reportHoveredWindow(objHoveredWindow)
 
         let blnInside = objPoint != nil
         if blnInside != blnMouseInside {
             blnMouseInside = blnInside
             onMouseInsideChanged?(blnInside)
         }
+    }
+
+    /// Tells the owner when the hovered card changes.
+    /// - Parameter objWindow: Hovered window, or `nil`.
+    private func reportHoveredWindow(_ objWindow: WindowInfo?) {
+        guard objWindow?.id != intHoveredCardId else { return }
+        intHoveredCardId = objWindow?.id
+        onHoverWindow?(objWindow)
+    }
+
+    /// Window on a card.
+    /// - Parameter intIndex: Card index.
+    /// - Returns: Its window, if the card exists.
+    func window(at intIndex: Int) -> WindowInfo? {
+        objState.arrObjWindows[safe: intIndex]
+    }
+
+    /// Latest thumbnail shown on a window's card.
+    /// - Parameter objWindow: Window.
+    /// - Returns: Image, if one has arrived.
+    func thumbnail(for objWindow: WindowInfo) -> NSImage? {
+        objState.dictObjThumbnails[objWindow.id]
     }
 
     /// Raises or closes the clicked window, or opens Accessibility settings.

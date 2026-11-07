@@ -207,6 +207,7 @@ final class SettingsStore {
         static let strAddedDownloads = "DidAddDownloadsStack"
         static let strTrailingPinned = "TrailingPinned"
         static let strCurrentDesktopOnly = "CurrentDesktopOnly"
+        static let strPeek = "Peek"
     }
 
     /// Pins used on first launch.
@@ -270,6 +271,9 @@ final class SettingsStore {
 
     /// Whether window previews leave out windows on other desktops.
     var blnCurrentDesktopOnly: Bool { didSet { objDefaults.set(blnCurrentDesktopOnly, forKey: Key.strCurrentDesktopOnly) } }
+
+    /// Whether hovering a preview card shows that window full size ("peek").
+    var blnPeek: Bool { didSet { objDefaults.set(blnPeek, forKey: Key.strPeek) } }
 
     /// Which display the dock lives on.
     var enmDisplayMode: DockDisplayMode { didSet { objDefaults.set(enmDisplayMode.rawValue, forKey: Key.strDisplayMode) } }
@@ -339,6 +343,7 @@ final class SettingsStore {
             Key.strTintStrength: 0.25,
             Key.strCompact: false,
             Key.strIndicatorStyle: IndicatorStyle.dot.rawValue,
+            Key.strPeek: true,
         ])
 
         fltIconSize = objDefaults.double(forKey: Key.strIconSize)
@@ -357,6 +362,7 @@ final class SettingsStore {
         blnReducePreviewsOnBattery = objDefaults.bool(forKey: Key.strReducePreviewsOnBattery)
         enmDisplayMode = DockDisplayMode(rawValue: objDefaults.string(forKey: Key.strDisplayMode) ?? "") ?? .main
         blnCurrentDesktopOnly = objDefaults.bool(forKey: Key.strCurrentDesktopOnly)
+        blnPeek = objDefaults.bool(forKey: Key.strPeek)
         dictObjGroups = objDefaults.data(forKey: Key.strGroups)
             .flatMap { try? JSONDecoder().decode([String: DockGroup].self, from: $0) } ?? [:]
         blnShowTrash = objDefaults.bool(forKey: Key.strShowTrash)

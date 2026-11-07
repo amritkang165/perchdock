@@ -126,6 +126,7 @@ private struct BehaviorTab: View {
                 Toggle("Reduce to 30 fps on battery", isOn: $objSettings.blnReducePreviewsOnBattery)
                     .disabled(!objSettings.blnLivePreviews)
                 Toggle("Only show windows on this desktop", isOn: $objSettings.blnCurrentDesktopOnly)
+                Toggle("Peek at a window when hovering its preview", isOn: $objSettings.blnPeek)
             } footer: {
                 Text("The delay is how long to hover an icon before its windows appear. Live previews play at 60 fps while open and stop when closed. Windows on other desktops show their last snapshot, or are left out when \"Only show windows on this desktop\" is on (minimized windows still show). Battery saving also applies in Low Power Mode.")
                     .foregroundStyle(.secondary)

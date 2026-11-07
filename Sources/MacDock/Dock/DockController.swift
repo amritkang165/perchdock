@@ -54,6 +54,11 @@ final class DockController {
     private var intGridHoveredTile: Int?
     /// Apps in the open group popover (empty for folder stacks).
     private var arrObjGridMembers: [DockItem] = []
+    /// Full-size "peek" at the hovered preview's window.
+    private let objPeek = PeekController()
+    private var objPeekTask: Task<Void, Never>?
+    /// Hover time on a card before peeking (moving between cards while peeking is instant).
+    private static let objPeekDelay: Duration = .milliseconds(350)
     private var objLocalMiddleMonitor: Any?
     private var objGlobalMiddleMonitor: Any?
     private var dblLastMiddleTimestamp: TimeInterval = -1
@@ -162,6 +167,9 @@ final class DockController {
         }
         objPicker.onRightClickWindow = { [weak self] objWindow, objEvent in
             self?.handlePickerRightClick(objWindow, objEvent: objEvent)
+        }
+        objPicker.onHoverWindow = { [weak self] objWindow in
+            self?.handlePeekHover(objWindow)
         }
         installMiddleClickMonitors()
         objGrid.onHide = { [weak self] in
@@ -1696,6 +1704,44 @@ final class DockController {
         }
     }
 
+    // MARK: - Peek
+
+    /// Peeks at a hovered card's window after a short hover; ends when it's left.
+    /// - Parameter objWindow: Hovered window, or `nil`.
+    private func handlePeekHover(_ objWindow: WindowInfo?) {
+        objPeekTask?.cancel()
+        guard objSettings.blnPeek else { return }
+        guard let objWindow else {
+            // Linger briefly so crossing the gap between cards doesn't blink the peek off.
+            objPeekTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(150))
+                guard !Task.isCancelled else { return }
+                self?.endPeek()
+            }
+            return
+        }
+        objPeekTask = Task { [weak self] in
+            guard let self else { return }
+            // Already peeking: follow the cursor across cards without waiting.
+            if !self.blnPeeking {
+                try? await Task.sleep(for: Self.objPeekDelay)
+            }
+            guard !Task.isCancelled, self.objPicker.blnIsVisible else { return }
+            self.blnPeeking = true
+            self.objPeek.show(objWindow, objPlaceholder: self.objPicker.thumbnail(for: objWindow), objFallbackScreen: self.objScreen)
+        }
+    }
+
+    /// Whether a peek is on screen.
+    private var blnPeeking = false
+
+    /// Ends any peek (and a pending one).
+    private func endPeek() {
+        objPeekTask?.cancel()
+        blnPeeking = false
+        objPeek.hide()
+    }
+
     // MARK: - Middle-click to quit
 
     /// Watches middle-button releases (in MacDock and system-wide, since AppKit
@@ -1962,6 +2008,7 @@ final class DockController {
     private func hidePicker() {
         objShowPickerTask?.cancel()
         objHidePickerTask?.cancel()
+        endPeek()
         objPicker.hide()
         objPickerPathStart = nil
         removeOutsideClickMonitor()
@@ -2030,6 +2077,17 @@ final class DockController {
     func debugPreviewGridTile(_ intTile: Int) {
         guard let objMember = arrObjGridMembers[safe: intTile] else { return }
         showGridPicker(for: objMember, intTile: intTile)
+    }
+
+    /// Debug aid: peeks at a card in the open picker, as if it were hovered.
+    /// - Parameter intCard: Card index.
+    /// - Returns: Whether the card existed (cards load asynchronously).
+    @discardableResult
+    func debugPeek(atCard intCard: Int) -> Bool {
+        guard let objWindow = objPicker.window(at: intCard) else { return false }
+        blnPeeking = true
+        objPeek.show(objWindow, objPlaceholder: objPicker.thumbnail(for: objWindow), objFallbackScreen: objScreen)
+        return true
     }
 
     /// Debug aid: shows a reorder drag in the open group popover.
