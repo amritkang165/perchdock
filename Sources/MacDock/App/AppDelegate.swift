@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var objSettingsWindow = SettingsWindowController(objSettings: objSettings, objThumbnailService: objThumbnailService)
     private var objDockController: DockController?
     private var objStatusItem: NSStatusItem?
+    /// Extra docks, one per non-main display, in "every display" mode.
+    private var arrObjExtraDocks: [DockController] = []
+    private var objScreensObserver: NSObjectProtocol?
 
     /// Boots services, reconciles native Dock state, and shows the dock panel.
     /// - Parameter notification: Launch notification (unused).
@@ -47,6 +50,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.objNewWindowTracker.markSeen(intWindowId)
         }
 
+        let objController = makeDockController(intFixedScreenId: nil)
+        objController.show()
+        objDockController = objController
+
+        // "Every display" mode: extra docks follow the setting and connected displays.
+        syncExtraDocks()
+        observeDisplayMode()
+        objScreensObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.syncExtraDocks() }
+        }
+
+        // Windows stay out from under every dock while it's always shown.
+        objSpaceKeeper.fnReservedStrips = { [weak self] in
+            guard let self else { return [] }
+            return ([self.objDockController] + self.arrObjExtraDocks).compactMap { $0?.reservedStrip() }
+        }
+        objWindowService.fnUsableFrame = { [weak self] objScreen in
+            self?.objSpaceKeeper.usableFrame(of: objScreen) ?? objScreen.visibleFrame
+        }
+        objSpaceKeeper.start()
+
+        buildStatusItem()
+        runDebugArguments(objController)
+    }
+
+    // MARK: - Docks per display
+
+    /// Creates a dock wired to the shared services.
+    /// - Parameter intFixedScreenId: Display to pin it to, or `nil` for the main dock.
+    /// - Returns: The controller (not yet shown).
+    private func makeDockController(intFixedScreenId: CGDirectDisplayID?) -> DockController {
         let objController = DockController(
             objTracker: objAppTracker,
             objWindowService: objWindowService,
@@ -55,23 +91,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             objBadges: objDockBadges,
             objNowPlaying: objNowPlaying,
             objBattery: objBattery,
-            objSettings: objSettings
+            objSettings: objSettings,
+            intFixedScreenId: intFixedScreenId
         )
         objController.onOpenSettings = { [weak self] in
             self?.openSettings()
         }
-        objController.show()
-        objDockController = objController
+        return objController
+    }
 
-        // Windows stay out from under the dock while it's always shown.
-        objSpaceKeeper.fnReservedStrip = { [weak objController] in objController?.reservedStrip() }
-        objWindowService.fnUsableFrame = { [weak self] objScreen in
-            self?.objSpaceKeeper.usableFrame(of: objScreen) ?? objScreen.visibleFrame
+    /// In "every display" mode, keeps one extra dock on each display other than the
+    /// main one (the main dock stays on the menu-bar display); otherwise removes them.
+    private func syncExtraDocks() {
+        let setIntWanted: Set<CGDirectDisplayID> = objSettings.enmDisplayMode == .everyDisplay
+            ? Set(NSScreen.screens.dropFirst().compactMap { DockController.displayId(of: $0) })
+            : []
+
+        // Drop docks whose display is gone or no longer wanted.
+        arrObjExtraDocks.removeAll { objDock in
+            guard let intId = objDock.intFixedScreenId, setIntWanted.contains(intId) else {
+                objDock.tearDown()
+                return true
+            }
+            return false
         }
-        objSpaceKeeper.start()
 
-        buildStatusItem()
-        runDebugArguments(objController)
+        // Add docks for newly wanted displays.
+        let setIntHave = Set(arrObjExtraDocks.compactMap(\.intFixedScreenId))
+        for intId in setIntWanted.subtracting(setIntHave) {
+            let objDock = makeDockController(intFixedScreenId: intId)
+            objDock.show()
+            arrObjExtraDocks.append(objDock)
+        }
+    }
+
+    /// Re-syncs the extra docks whenever the display mode changes.
+    private func observeDisplayMode() {
+        withObservationTracking {
+            _ = objSettings.enmDisplayMode
+        } onChange: { [weak self] in
+            // onChange fires before the new value is stored; apply on the next turn.
+            Task { @MainActor [weak self] in
+                self?.syncExtraDocks()
+                self?.observeDisplayMode()
+            }
+        }
     }
 
     /// Starts the widget services and tells the dock which widget tiles to show.

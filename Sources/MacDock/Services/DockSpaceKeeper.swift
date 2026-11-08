@@ -10,9 +10,13 @@ import ApplicationServices
 /// under the dock is left alone (that's deliberate).
 @MainActor
 final class DockSpaceKeeper {
-    /// Where the dock sits and must stay clear, or `nil` when nothing is reserved
-    /// (auto-hide on). The rect is the dock's strip in AppKit screen coordinates.
-    var fnReservedStrip: (() -> (objScreen: NSScreen, enmPosition: DockPosition, objStrip: CGRect)?)?
+    /// A dock's footprint that windows must stay clear of.
+    typealias Reservation = (objScreen: NSScreen, enmPosition: DockPosition, objStrip: CGRect)
+
+    /// Where each dock sits and must stay clear (one per display in "every display"
+    /// mode); empty when nothing is reserved (auto-hide on). Strips are in AppKit
+    /// screen coordinates.
+    var fnReservedStrips: (() -> [Reservation])?
 
     /// Gap left between a trimmed window and the dock.
     private static let fltMargin: CGFloat = 4
@@ -43,7 +47,7 @@ final class DockSpaceKeeper {
     /// - Returns: Usable frame in AppKit coordinates.
     func usableFrame(of objScreen: NSScreen) -> CGRect {
         var objFrame = objScreen.visibleFrame
-        guard let objReserved = fnReservedStrip?(), objReserved.objScreen == objScreen else { return objFrame }
+        guard let objReserved = fnReservedStrips?().first(where: { $0.objScreen == objScreen }) else { return objFrame }
         let objStrip = objReserved.objStrip
         switch objReserved.enmPosition {
         case .bottom:
@@ -105,7 +109,7 @@ final class DockSpaceKeeper {
     /// Debounces changes, then fits the affected windows once they settle.
     /// - Parameter objElement: The window that was created or resized.
     private func windowChanged(_ objElement: AXUIElement) {
-        guard fnReservedStrip?() != nil else { return }
+        guard fnReservedStrips?().isEmpty == false else { return }
         if !arrObjPending.contains(where: { CFEqual($0, objElement) }) {
             arrObjPending.append(objElement)
         }
@@ -128,17 +132,17 @@ final class DockSpaceKeeper {
     /// Trims a standard window so it stops at the dock, if it reaches into the strip.
     /// - Parameter objElement: AX window.
     private func fit(_ objElement: AXUIElement) {
-        guard let objReserved = fnReservedStrip?(),
-              stringAttribute(objElement, kAXSubroleAttribute) == kAXStandardWindowSubrole as String,
+        guard stringAttribute(objElement, kAXSubroleAttribute) == kAXStandardWindowSubrole as String,
               let objAXFrame = axFrame(of: objElement) else { return }
 
         // AX frames use a top-left origin at the primary display's top.
         let fltPrimaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let objFrame = CGRect(x: objAXFrame.minX, y: fltPrimaryHeight - objAXFrame.maxY,
                               width: objAXFrame.width, height: objAXFrame.height)
-        let objStrip = objReserved.objStrip
-        guard objFrame.intersects(objStrip),
-              objReserved.objScreen.frame.contains(CGPoint(x: objFrame.midX, y: objFrame.midY)) else { return }
+        // The dock on the display the window is (mostly) on.
+        let objCenter = CGPoint(x: objFrame.midX, y: objFrame.midY)
+        guard let objReserved = fnReservedStrips?().first(where: { $0.objScreen.frame.contains(objCenter) }),
+              objFrame.intersects(objReserved.objStrip) else { return }
 
         let objUsable = usableFrame(of: objReserved.objScreen)
         var objTarget = objFrame

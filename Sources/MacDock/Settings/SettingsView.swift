@@ -54,9 +54,15 @@ private struct AppearanceTab: View {
                     }
                 }
             } footer: {
-                if objSettings.enmDisplayMode == .followCursor {
+                switch objSettings.enmDisplayMode {
+                case .followCursor:
                     Text("Push the cursor against the dock's edge on another display to move the dock there.")
                         .foregroundStyle(.secondary)
+                case .everyDisplay:
+                    Text("Each connected display gets its own dock with the same apps and settings. Docks appear and disappear as displays connect.")
+                        .foregroundStyle(.secondary)
+                case .main:
+                    EmptyView()
                 }
             }
 

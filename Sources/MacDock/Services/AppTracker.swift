@@ -100,8 +100,25 @@ final class AppTracker {
     /// Widgets to show on the right, in order (set by the app; empty when unset).
     @ObservationIgnored var fnWidgets: (() -> [WidgetTile])?
 
-    /// Called after the set or order of items changes so the panel can resize.
-    @ObservationIgnored var onItemsChanged: (() -> Void)?
+    /// Called after the set or order of items changes so panels can resize (one
+    /// listener per dock; there's a dock per display in "every display" mode).
+    @ObservationIgnored private var dictFnItemsChanged: [UUID: () -> Void] = [:]
+
+    /// Registers a listener for item-set changes.
+    /// - Parameter fnListener: Called after items are added, removed or reordered.
+    /// - Returns: Token for `removeItemsChangedListener(_:)`.
+    @discardableResult
+    func addItemsChangedListener(_ fnListener: @escaping () -> Void) -> UUID {
+        let objToken = UUID()
+        dictFnItemsChanged[objToken] = fnListener
+        return objToken
+    }
+
+    /// Unregisters a listener.
+    /// - Parameter objToken: Token from `addItemsChangedListener(_:)`.
+    func removeItemsChangedListener(_ objToken: UUID) {
+        dictFnItemsChanged[objToken] = nil
+    }
 
     @ObservationIgnored private let objSettings: SettingsStore
     @ObservationIgnored private let objMinimized = MinimizedWindowService()
@@ -494,7 +511,7 @@ final class AppTracker {
         strActiveBundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
 
         if blnItemsChanged {
-            onItemsChanged?()
+            dictFnItemsChanged.values.forEach { $0() }
         }
     }
 

@@ -27,4 +27,12 @@ final class MouseMonitor {
             return objEvent
         }
     }
+
+    /// Stops listening (e.g. when a display's dock is removed).
+    func stop() {
+        if let objGlobalMonitor { NSEvent.removeMonitor(objGlobalMonitor) }
+        if let objLocalMonitor { NSEvent.removeMonitor(objLocalMonitor) }
+        objGlobalMonitor = nil
+        objLocalMonitor = nil
+    }
 }

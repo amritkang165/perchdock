@@ -48,7 +48,13 @@ final class DockController {
 
     // Display the dock is on (`nil` = main display).
     private var intScreenId: CGDirectDisplayID?
+    /// Set for the extra docks of "every display" mode: this dock always stays on that display.
+    let intFixedScreenId: CGDirectDisplayID?
     private var objMoveScreenTask: Task<Void, Never>?
+    /// Registration with the app tracker's item-change listeners.
+    private var objItemsListenerToken: UUID?
+    /// Set by `tearDown()`; a torn-down dock ignores further changes.
+    private var blnTornDown = false
 
     private var objShowPickerTask: Task<Void, Never>?
     private var objHidePickerTask: Task<Void, Never>?
@@ -94,6 +100,7 @@ final class DockController {
     ///   - objNewWindowTracker: Flags recently opened windows.
     ///   - objBadges: Notification badges and progress from the system Dock.
     ///   - objSettings: User preferences.
+    ///   - intFixedScreenId: Display this dock is pinned to ("every display" mode), or `nil` for the main dock.
     init(
         objTracker: AppTracker,
         objWindowService: WindowService,
@@ -102,8 +109,10 @@ final class DockController {
         objBadges: DockBadgeService,
         objNowPlaying: NowPlayingService,
         objBattery: BatteryService,
-        objSettings: SettingsStore
+        objSettings: SettingsStore,
+        intFixedScreenId: CGDirectDisplayID? = nil
     ) {
+        self.intFixedScreenId = intFixedScreenId
         self.objTracker = objTracker
         self.objWindowService = objWindowService
         self.objNewWindowTracker = objNewWindowTracker
@@ -139,6 +148,31 @@ final class DockController {
         layoutPanel(blnAnimated: false)
         objPanel.orderFrontRegardless()
         objMouseMonitor.start()
+    }
+
+    /// Removes this dock for good (its display went away, or "every display" was
+    /// turned off): closes its panels and stops every monitor and observer.
+    func tearDown() {
+        guard !blnTornDown else { return }
+        dismissTransientUI()
+        blnTornDown = true
+        objMouseMonitor.stop()
+        removeOutsideClickMonitor()
+        for objMonitor in [objLocalMiddleMonitor, objGlobalMiddleMonitor].compactMap({ $0 }) {
+            NSEvent.removeMonitor(objMonitor)
+        }
+        objLocalMiddleMonitor = nil
+        objGlobalMiddleMonitor = nil
+        if let objScreenObserver { NotificationCenter.default.removeObserver(objScreenObserver) }
+        objScreenObserver = nil
+        arrObjSystemObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        arrObjSystemObservers.removeAll()
+        if let objItemsListenerToken { objTracker.removeItemsChangedListener(objItemsListenerToken) }
+        objItemsListenerToken = nil
+        objAutoHideTask?.cancel()
+        objAutoShowTask?.cancel()
+        objMoveScreenTask?.cancel()
+        objPanel.orderOut(nil)
     }
 
     // MARK: - Wiring
@@ -213,7 +247,7 @@ final class DockController {
             self.updateAutoHide()
         }
 
-        objTracker.onItemsChanged = { [weak self] in
+        objItemsListenerToken = objTracker.addItemsChangedListener { [weak self] in
             self?.layoutPanel(blnAnimated: true)
         }
 
@@ -303,8 +337,9 @@ final class DockController {
         } onChange: { [weak self] in
             // onChange fires before the new value is stored; apply on the next turn.
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                if self.objSettings.enmDisplayMode == .main {
+                guard let self, !self.blnTornDown else { return }
+                // Only follow mode moves the main dock between displays; otherwise it goes home.
+                if self.objSettings.enmDisplayMode != .followCursor {
                     self.intScreenId = nil
                 }
                 // Trash / minimized tiles come and go with their toggles.
@@ -323,9 +358,13 @@ final class DockController {
         DockGeometry(objSettings: objSettings, arrObjItems: objTracker.arrObjItems)
     }
 
-    /// Screen the dock lives on: the chosen display if it's still connected,
-    /// otherwise the one with the menu bar.
+    /// Screen the dock lives on: its fixed display ("every display" mode), else the
+    /// chosen display if it's still connected, otherwise the one with the menu bar.
     private var objScreen: NSScreen? {
+        if let intFixedScreenId {
+            // Pinned: never wander to another display (the owner removes this dock if it's gone).
+            return NSScreen.screens.first { Self.displayId(of: $0) == intFixedScreenId }
+        }
         if let intScreenId, let objMatch = NSScreen.screens.first(where: { Self.displayId(of: $0) == intScreenId }) {
             return objMatch
         }
@@ -335,7 +374,7 @@ final class DockController {
     /// Core Graphics display ID of a screen.
     /// - Parameter objScreen: Screen.
     /// - Returns: Display ID, or `nil` if unavailable.
-    private static func displayId(of objScreen: NSScreen) -> CGDirectDisplayID? {
+    static func displayId(of objScreen: NSScreen) -> CGDirectDisplayID? {
         (objScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
 

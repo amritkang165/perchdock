@@ -29,6 +29,8 @@ enum DockDisplayMode: String, CaseIterable, Identifiable {
     case main
     /// Moves to whichever display the cursor pushes against the dock edge on.
     case followCursor
+    /// A dock on every connected display.
+    case everyDisplay
 
     var id: String { rawValue }
 
@@ -37,6 +39,7 @@ enum DockDisplayMode: String, CaseIterable, Identifiable {
         switch self {
         case .main: "Main display"
         case .followCursor: "Follow the cursor"
+        case .everyDisplay: "Every display"
         }
     }
 }
