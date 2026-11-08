@@ -291,12 +291,14 @@ private struct SeekBarView: View {
     /// Hovered or dragged (the playhead grows).
     let blnActive: Bool
     let fltIconSize: CGFloat
+    @Environment(\.blnAnimationsPaused) private var blnAnimationsPaused
 
     var body: some View {
         let blnPlaying = objNowPlaying.blnIsPlaying
         let blnSquiggly = enmStyle == .squiggly
         // The wave animates smoothly; a straight bar only needs to creep forward.
-        TimelineView(.animation(minimumInterval: blnSquiggly ? 1.0 / 30 : 0.5, paused: !blnPlaying)) { objContext in
+        TimelineView(.animation(minimumInterval: blnSquiggly ? 1.0 / 30 : 0.5,
+                                paused: !blnPlaying || blnAnimationsPaused)) { objContext in
             let dblDuration = objNowPlaying.dblDuration
             let dblFraction = dblScrub ?? (dblDuration > 0 ? objNowPlaying.elapsed(at: objContext.date) / dblDuration : 0)
             let dblPhase = objContext.date.timeIntervalSinceReferenceDate
@@ -372,6 +374,7 @@ struct MarqueeText: View {
 
     @State private var fltTextWidth: CGFloat = 0
     @State private var objCycleStart = Date()
+    @Environment(\.blnAnimationsPaused) private var blnAnimationsPaused
 
     /// Pause before scrolling and at the end, and scroll speed (points per second).
     private static let dblStartHold = 2.0
@@ -381,7 +384,7 @@ struct MarqueeText: View {
     var body: some View {
         GeometryReader { objProxy in
             let fltOverflow = max(0, fltTextWidth - objProxy.size.width)
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !blnRunning || fltOverflow <= 0)) { objContext in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !blnRunning || fltOverflow <= 0 || blnAnimationsPaused)) { objContext in
                 let fltOffset = blnRunning ? offset(fltOverflow: fltOverflow, objNow: objContext.date) : 0
                 Text(strText)
                     .font(objFont)

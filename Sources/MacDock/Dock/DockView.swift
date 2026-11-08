@@ -15,6 +15,14 @@ final class DockState {
     var intGroupPending: Int?
     /// Apps launched from the dock that haven't finished launching (they bounce).
     var setStrLaunching: Set<String> = []
+    /// Dock is tucked away (auto-hide); continuous animations pause until it's shown.
+    var blnIsHidden = false
+}
+
+extension EnvironmentValues {
+    /// Whether continuous animations (equalizer, glow, seek bar, progress) should stop
+    /// ticking, e.g. while the dock is hidden off-screen.
+    @Entry var blnAnimationsPaused = false
 }
 
 /// One dock icon with its notification badge, progress bar and bounces.
@@ -226,6 +234,8 @@ struct DockView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.fltIconSize)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.blnCompact)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: objSettings.enmNowPlayingSize)
+        // Hidden off-screen: stop timeline animations so the dock costs ~nothing.
+        .environment(\.blnAnimationsPaused, objState.blnIsHidden)
     }
 
     /// Running indicator in the chosen style. Turns accent-colored (and larger)

@@ -8,6 +8,7 @@ struct NowPlayingTileView: View {
     let fltSize: CGFloat
     /// Show a thin progress line along the bottom instead of the glyph (side-dock tile with a fly-out player).
     var blnShowsProgress = false
+    @Environment(\.blnAnimationsPaused) private var blnAnimationsPaused
 
     var body: some View {
         let fltCorner = fltSize * 0.22
@@ -99,7 +100,8 @@ struct NowPlayingTileView: View {
 
     /// Thin track-progress line near the bottom edge, advancing while playing.
     private var progressLine: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { objContext in
+        // Ticks once a second, only while playing and on screen.
+        TimelineView(.animation(minimumInterval: 1, paused: blnAnimationsPaused || !objNowPlaying.blnIsPlaying)) { objContext in
             let dblDuration = objNowPlaying.dblDuration
             let dblFraction = dblDuration > 0 ? objNowPlaying.elapsed(at: objContext.date) / dblDuration : 0
             let fltWidth = fltSize * 0.72
@@ -133,9 +135,10 @@ private struct ArtworkGlow<Content: View>: View {
     let fltSize: CGFloat
     let fltCorner: CGFloat
     @ViewBuilder let fnArtwork: () -> Content
+    @Environment(\.blnAnimationsPaused) private var blnAnimationsPaused
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 15)) { objContext in
+        TimelineView(.animation(minimumInterval: 1.0 / 15, paused: blnAnimationsPaused)) { objContext in
             // A ~3 s breathing cycle between dim and bright.
             let dblPhase = (sin(objContext.date.timeIntervalSinceReferenceDate * 2 * .pi / 3) + 1) / 2
             fnArtwork()
@@ -152,8 +155,10 @@ private struct ArtworkGlow<Content: View>: View {
 
 /// Three bouncing bars (a tiny "playing" visualizer).
 private struct EqualizerBars: View {
+    @Environment(\.blnAnimationsPaused) private var blnAnimationsPaused
+
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12)) { objContext in
+        TimelineView(.animation(minimumInterval: 1.0 / 12, paused: blnAnimationsPaused)) { objContext in
             let fltTime = objContext.date.timeIntervalSinceReferenceDate
             GeometryReader { objProxy in
                 HStack(alignment: .bottom, spacing: objProxy.size.width * 0.14) {

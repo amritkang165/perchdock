@@ -74,7 +74,10 @@ final class DockController {
     private var arrObjSystemObservers: [NSObjectProtocol] = []
 
     // Auto-hide.
-    private var blnShown = true
+    private var blnShown = true {
+        // Animations pause while tucked away (only matters when auto-hide is on).
+        didSet { objState.blnIsHidden = !blnShown }
+    }
     private var blnMouseOverDock = false
     private var blnMenuOpen = false
     private var objAutoHideTask: Task<Void, Never>?
