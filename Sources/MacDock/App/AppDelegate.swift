@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let objBattery = BatteryService()
     private let objNativeDock = NativeDockController()
     private let objUpdates = UpdateController()
+    private let objSpaceKeeper = DockSpaceKeeper()
     private lazy var objSettingsWindow = SettingsWindowController(objSettings: objSettings, objThumbnailService: objThumbnailService)
     private var objDockController: DockController?
     private var objStatusItem: NSStatusItem?
@@ -61,6 +62,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         objController.show()
         objDockController = objController
+
+        // Windows stay out from under the dock while it's always shown.
+        objSpaceKeeper.fnReservedStrip = { [weak objController] in objController?.reservedStrip() }
+        objWindowService.fnUsableFrame = { [weak self] objScreen in
+            self?.objSpaceKeeper.usableFrame(of: objScreen) ?? objScreen.visibleFrame
+        }
+        objSpaceKeeper.start()
 
         buildStatusItem()
         runDebugArguments(objController)

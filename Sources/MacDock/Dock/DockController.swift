@@ -453,6 +453,25 @@ final class DockController {
         objHoverLabel.show(strText: objItem.strName, objAnchorPoint: anchorPoint(forIndex: intIndex), enmPosition: objSettings.enmPosition)
     }
 
+    /// The strip of screen the always-shown dock occupies, which windows should stay
+    /// out of, or `nil` with auto-hide on (the dock then overlaps windows by design).
+    /// - Returns: Screen, edge and strip in AppKit screen coordinates.
+    func reservedStrip() -> (objScreen: NSScreen, enmPosition: DockPosition, objStrip: CGRect)? {
+        guard !objSettings.blnAutoHide, let objScreen else { return nil }
+        let objGeometry = objGeometry
+        let objPanel = objGeometry.panelFrame(in: objScreen.frame, blnShown: true)
+        // Only the bar itself (plus the gap to the edge) counts, not the panel's
+        // headroom for magnified icons.
+        let fltThickness = DockGeometry.fltScreenGap + objGeometry.fltBarThickness
+        let objFrame = objScreen.frame
+        let objStrip: CGRect = switch objSettings.enmPosition {
+        case .bottom: CGRect(x: objPanel.minX, y: objFrame.minY, width: objPanel.width, height: fltThickness)
+        case .left: CGRect(x: objFrame.minX, y: objPanel.minY, width: fltThickness, height: objPanel.height)
+        case .right: CGRect(x: objFrame.maxX - fltThickness, y: objPanel.minY, width: fltThickness, height: objPanel.height)
+        }
+        return (objScreen, objSettings.enmPosition, objStrip)
+    }
+
     /// Whether a screen point is touching the dock edge of a screen.
     /// - Parameters:
     ///   - objScreenPoint: Cursor location.

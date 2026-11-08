@@ -35,6 +35,9 @@ final class WindowService {
     /// Fired after a window is raised (used to clear its "new" flag).
     var onRaised: ((CGWindowID) -> Void)?
 
+    /// Area of a screen windows may be tiled into (defaults to its visible frame).
+    var fnUsableFrame: ((NSScreen) -> CGRect)?
+
     /// The window currently in front of all others on this desktop: the topmost
     /// normal-level window, ignoring MacDock's own panels and tiny helper windows.
     /// - Returns: Its window ID, or `nil` if only the desktop is showing.
@@ -213,19 +216,21 @@ final class WindowService {
         } ?? NSScreen.main
         guard let objHome else { return }
 
+        // Usable area: the visible frame minus MacDock's own strip when it's always shown.
+        let fnUsable = fnUsableFrame ?? { $0.visibleFrame }
         let objTarget: CGRect
         switch enmTile {
         case .leftHalf:
-            let objVisible = objHome.visibleFrame
+            let objVisible = fnUsable(objHome)
             objTarget = CGRect(x: objVisible.minX, y: objVisible.minY, width: (objVisible.width / 2).rounded(), height: objVisible.height)
         case .rightHalf:
-            let objVisible = objHome.visibleFrame
+            let objVisible = fnUsable(objHome)
             let fltWidth = (objVisible.width / 2).rounded()
             objTarget = CGRect(x: objVisible.maxX - fltWidth, y: objVisible.minY, width: fltWidth, height: objVisible.height)
         case .fill:
-            objTarget = objHome.visibleFrame
+            objTarget = fnUsable(objHome)
         case .display(let objScreen):
-            let objVisible = objScreen.visibleFrame
+            let objVisible = fnUsable(objScreen)
             let objSize = CGSize(width: min(objCurrent?.width ?? objVisible.width, objVisible.width),
                                  height: min(objCurrent?.height ?? objVisible.height, objVisible.height))
             objTarget = CGRect(x: objVisible.midX - objSize.width / 2, y: objVisible.midY - objSize.height / 2,
