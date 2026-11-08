@@ -1367,6 +1367,7 @@ final class DockController {
         // Blocks until the menu closes.
         NSMenu.popUpContextMenu(objMenu, with: objEvent, for: objHostingView)
         blnMenuOpen = false
+        refreshBorrowedActions()
         handleMouse(at: NSEvent.mouseLocation)
         updateAutoHide()
     }
@@ -1610,6 +1611,17 @@ final class DockController {
         }
     }
 
+    /// App whose borrowed Dock actions were just shown, to refresh after its menu closes.
+    private var objBorrowedRefresh: (objAppUrl: URL, intPid: pid_t?)?
+
+    /// Refreshes the borrowed actions of the app whose menu just closed. Never while a
+    /// menu is open: opening the native Dock's menu then could disturb ours.
+    private func refreshBorrowedActions() {
+        guard let objRefresh = objBorrowedRefresh else { return }
+        objBorrowedRefresh = nil
+        NativeDockMenuService.refreshSoon(forAppAt: objRefresh.objAppUrl, intPid: objRefresh.intPid)
+    }
+
     /// Builds the context menu for an app (in the bar, or inside a group's popover).
     /// - Parameters:
     ///   - objItem: The app's item.
@@ -1620,8 +1632,8 @@ final class DockController {
         let objApp = objItem.objRunningApp.flatMap { $0.isTerminated ? nil : $0 }
 
         // Windows, so any one can be picked directly.
+        let arrObjWindows = objApp.map { objWindowService.windows(for: $0) } ?? []
         if let objApp {
-            let arrObjWindows = objWindowService.windows(for: objApp)
             if !arrObjWindows.isEmpty {
                 objMenu.addItem(NSMenuItem.sectionHeader(title: "Windows"))
                 for objWindow in arrObjWindows {
@@ -1651,6 +1663,34 @@ final class DockController {
                 objMenu.addItem(objEntry)
             }
             objMenu.addItem(.separator())
+        }
+
+        // The app's own Dock actions (e.g. "New Incognito Window"), borrowed from the native Dock.
+        if let objAppUrl {
+            let setStrRecentNames = Set(arrObjRecents.map { FileManager.default.displayName(atPath: $0.path) })
+            let intPid = objApp?.processIdentifier
+            let arrObjEntries = NativeDockMenuService.entries(forAppAt: objAppUrl, intPid: intPid, setStrSkip: setStrRecentNames)
+            // Re-read once this menu closes, so the cached actions stay current.
+            objBorrowedRefresh = (objAppUrl, intPid)
+            if !arrObjEntries.isEmpty {
+                for objEntry in arrObjEntries {
+                    switch objEntry {
+                    case .action(let strTitle, let intIndex):
+                        // Apps indent items under a heading with spaces; a menu indent reads better.
+                        let strShown = strTitle.trimmingCharacters(in: .whitespaces)
+                        let objAction = ClosureMenuItem(strShown) {
+                            NativeDockMenuService.perform(strTitle, intIndex: intIndex, forAppAt: objAppUrl)
+                        }
+                        objAction.indentationLevel = strShown.count < strTitle.count ? 1 : 0
+                        objMenu.addItem(objAction)
+                    case .header(let strTitle):
+                        objMenu.addItem(NSMenuItem.sectionHeader(title: strTitle))
+                    case .separator:
+                        objMenu.addItem(.separator())
+                    }
+                }
+                objMenu.addItem(.separator())
+            }
         }
 
         let strId = objItem.strBundleId
@@ -2012,6 +2052,7 @@ final class DockController {
                 // Same menu as the app gets in the bar, with group options instead of pinning.
                 let objMenu = self.buildAppMenu(for: objMember, strGroupId: strGroupId)
                 NSMenu.popUpContextMenu(objMenu, with: objEvent, for: self.objHostingView)
+                self.refreshBorrowedActions()
             }
             objGrid.onFooter = nil
             arrObjGridMembers = arrObjMembers

@@ -185,6 +185,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// - `--dump-recents=BUNDLE_ID,…`: writes apps' recent documents to /tmp/macdock-recents.txt.
     /// - `--open-settings`: opens the Settings window.
     /// - `--flyout`: opens the side-dock Now Playing fly-out.
+    /// - `--dock-menu=BUNDLE_ID`: writes the app's borrowed native Dock actions to /tmp/macdock-dockmenu.txt.
+    /// - `--dock-action=BUNDLE_ID,TITLE`: presses an item in the app's native Dock menu.
     /// - Parameter objController: The dock controller.
     private func runDebugArguments(_ objController: DockController) {
         let arrStrArgs = CommandLine.arguments
@@ -276,6 +278,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if arrStrArgs.contains("--fake-badges") {
             objDockBadges.debugFake(strBadgeId: "com.google.Chrome", strProgressId: "com.apple.finder")
         }
+        // `--dock-menu=BUNDLE_ID`: writes the app's borrowed Dock actions to /tmp/macdock-dockmenu.txt.
+        if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--dock-menu=") }) {
+            let strBundleId = String(strArg.dropFirst("--dock-menu=".count))
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard let objUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: strBundleId) else { return }
+                let intPid = NSRunningApplication.runningApplications(withBundleIdentifier: strBundleId).first?.processIdentifier
+                let objStart = ContinuousClock.now
+                let arrObjEntries = NativeDockMenuService.entries(forAppAt: objUrl, intPid: intPid, setStrSkip: [])
+                let objElapsed = ContinuousClock.now - objStart
+                let arrStrLines = ["took \(objElapsed)"] + arrObjEntries.map { objEntry in
+                    switch objEntry {
+                    case .action(let strTitle, _): strTitle
+                    case .header(let strTitle): "[\(strTitle)]"
+                    case .separator: "---"
+                    }
+                }
+                try? arrStrLines.joined(separator: "\n").write(toFile: "/tmp/macdock-dockmenu.txt", atomically: true, encoding: .utf8)
+            }
+        }
+
+        // `--dock-action=BUNDLE_ID,TITLE`: presses an item in the app's native Dock menu.
+        if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--dock-action=") }) {
+            let arrStrParts = strArg.dropFirst("--dock-action=".count).split(separator: ",", maxSplits: 1).map(String.init)
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard arrStrParts.count == 2,
+                      let objUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: arrStrParts[0]) else { return }
+                NativeDockMenuService.perform(arrStrParts[1], intIndex: -1, forAppAt: objUrl)
+            }
+        }
+
         // `--flyout`: opens the side-dock Now Playing fly-out once something is playing.
         if arrStrArgs.contains("--flyout") {
             Task { @MainActor in
