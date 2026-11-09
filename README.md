@@ -71,8 +71,10 @@ You'll need Xcode 26 or later and [XcodeGen](https://github.com/yonaskolb/XcodeG
 ```bash
 git clone <this repository>
 cd <repository folder>
-scripts/build.sh --run
+scripts/build.sh --install
 ```
+
+`--install` copies the app to **Applications** and launches it from there. Use `--run` instead to launch it straight from the `build/` folder while developing.
 
 `scripts/build.sh` creates a local signing identity the first time it runs, so the macOS permissions you grant survive rebuilds. To make a drag-to-install DMG in `dist/`, run `scripts/release.sh`.
 
