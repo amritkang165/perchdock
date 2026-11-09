@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regenerates the Xcode project, builds PerchDock (Debug), and optionally launches it.
 # Usage: scripts/build.sh [--run | --install]
-#   --run      Launch the build straight from build/ (quick dev loop).
+#   --run      Launch the build straight from build.noindex/ (quick dev loop).
 #   --install  Copy the build to /Applications and launch it from there.
 set -euo pipefail
 
@@ -17,11 +17,11 @@ xcodebuild \
   -project PerchDock.xcodeproj \
   -scheme PerchDock \
   -configuration Debug \
-  -derivedDataPath build \
+  -derivedDataPath build.noindex \
   -quiet \
   build
 
-APP_PATH="build/Build/Products/Debug/PerchDock.app"
+APP_PATH="build.noindex/Build/Products/Debug/PerchDock.app"
 echo "Built: $APP_PATH"
 
 case "${1:-}" in

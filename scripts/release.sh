@@ -5,7 +5,7 @@
 #
 # Auto-updates (optional, one-time setup):
 #   1. Generate a signing key pair (stored in your login keychain):
-#        build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys
+#        build.noindex/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys
 #   2. Put the printed public key in project.yml as SUPublicEDKey, and the URL
 #      where you'll host appcast.xml as SUFeedURL.
 #   3. Run this script; it prints the signature line for the new appcast entry.
@@ -25,11 +25,11 @@ xcodebuild \
   -project PerchDock.xcodeproj \
   -scheme PerchDock \
   -configuration Release \
-  -derivedDataPath build \
+  -derivedDataPath build.noindex \
   -quiet \
   build
 
-APP_PATH="build/Build/Products/Release/PerchDock.app"
+APP_PATH="build.noindex/Build/Products/Release/PerchDock.app"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist")
 DMG_PATH="dist/PerchDock-$VERSION.dmg"
 
@@ -45,7 +45,7 @@ hdiutil create -quiet -volname "PerchDock $VERSION" -srcfolder "$STAGE_DIR" -for
 echo "Built: $DMG_PATH"
 
 # Sparkle signature for the appcast entry (needs a key from generate_keys).
-SIGN_UPDATE="build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update"
+SIGN_UPDATE="build.noindex/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update"
 if [[ -x "$SIGN_UPDATE" ]]; then
   if SIGNATURE=$("$SIGN_UPDATE" "$DMG_PATH" 2>/dev/null); then
     echo "Appcast enclosure attributes: $SIGNATURE"

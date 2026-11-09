@@ -74,7 +74,7 @@ cd <repository folder>
 scripts/build.sh --install
 ```
 
-`--install` copies the app to **Applications** and launches it from there. Use `--run` instead to launch it straight from the `build/` folder while developing.
+`--install` copies the app to **Applications** and launches it from there. Use `--run` instead to launch it straight from the `build.noindex/` folder while developing (the `.noindex` suffix keeps that copy out of Spotlight).
 
 `scripts/build.sh` creates a local signing identity the first time it runs, so the macOS permissions you grant survive rebuilds. To make a drag-to-install DMG in `dist/`, run `scripts/release.sh`.
 
