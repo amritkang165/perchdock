@@ -4,6 +4,9 @@
 
 # PerchDock
 
+[![CI](https://github.com/slynck/perchdock/actions/workflows/ci.yml/badge.svg)](https://github.com/slynck/perchdock/actions/workflows/ci.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+
 A faster, smarter Dock for macOS, with live window previews, app groups, a built-in music player and Liquid Glass styling. PerchDock takes over from the built-in Dock while it runs, and hands control back the moment you quit.
 
 <p align="center">
@@ -144,4 +147,9 @@ Sources/PerchDock/
   WindowPicker/   Window thumbnail capture and the preview panel
 scripts/          Build, release, signing setup and native Dock restore
 project.yml       XcodeGen project definition (the .xcodeproj is generated)
+.github/          CI: builds Debug and Release on every pull request and push to main
 ```
+
+## License
+
+PerchDock is free software under the [GNU General Public License v3.0](LICENSE).
