@@ -25,7 +25,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>MacDock asks Finder to empty the Trash.</string>
+	<string>MacDock asks Finder to empty the Trash, and asks Spotify for the current song's cover art.</string>
 	<key>SUFeedURL</key>
 	<string></string>
 	<key>SUPublicEDKey</key>
