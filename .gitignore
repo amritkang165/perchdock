@@ -9,4 +9,25 @@ DerivedData/
 .DS_Store
 xcuserdata/
 *.xcuserstate
+
+# Release artifacts (scripts/release.sh)
 dist/
+*.dmg
+*.zip
+
+# Swift Package Manager caches (if built with `swift build` or opened as a package)
+.build/
+.swiftpm/
+
+# Signing secrets: certificates, private keys and exported Sparkle keys must never be committed
+*.p12
+*.cer
+*.pem
+*.key
+*.keychain
+*.keychain-db
+*.mobileprovision
+*.provisionprofile
+sparkle_private_key*
+.env
+.env.*
