@@ -45,7 +45,7 @@ jobs:
         run: git diff --exit-code -- Sources/PerchDock/Resources/Info.plist
 
       - name: Cache Swift packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build.noindex/SourcePackages
           key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
@@ -87,7 +87,7 @@ jobs:
 
       - name: Upload logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: logs-${{ matrix.configuration }}
           path: |
@@ -102,7 +102,7 @@ jobs:
 
       - name: Upload app
         if: matrix.configuration == 'Release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PerchDock-unsigned
           path: PerchDock-unsigned.zip
