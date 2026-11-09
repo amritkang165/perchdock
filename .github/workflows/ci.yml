@@ -1,0 +1,109 @@
+# Builds PerchDock (and runs its unit tests) on every pull request and every push to main.
+# Signing is turned off: the local "PerchDock Local Signing" identity only exists
+# on the developer's Mac, and CI only needs to prove the app compiles.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to the same branch or PR cancels the run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.configuration }})
+    runs-on: macos-26
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    env:
+      # Pin Xcode so a runner image update can't silently change the toolchain.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # xcodegen rewrites Info.plist from project.yml; a diff means someone edited
+      # project.yml without committing the regenerated plist (or the reverse).
+      - name: Check Info.plist matches project.yml
+        run: git diff --exit-code -- Sources/PerchDock/Resources/Info.plist
+
+      - name: Cache Swift packages
+        uses: actions/cache@v6
+        with:
+          path: build.noindex/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Build
+        run: |
+          intStatus=0
+          xcodebuild \
+            -project PerchDock.xcodeproj \
+            -scheme PerchDock \
+            -configuration ${{ matrix.configuration }} \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build.noindex \
+            CODE_SIGNING_ALLOWED=NO \
+            build > build.log 2>&1 || intStatus=$?
+          # Show only errors, warnings and the result; the full log is uploaded on failure.
+          grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" build.log || true
+          exit $intStatus
+
+      # The test bundle is loaded into the app, so both must be signed by the same
+      # identity: ad-hoc ("-") signing works without any certificate on the runner.
+      - name: Test
+        if: matrix.configuration == 'Debug'
+        run: |
+          intStatus=0
+          xcodebuild \
+            -project PerchDock.xcodeproj \
+            -scheme PerchDock \
+            -destination 'platform=macOS' \
+            -derivedDataPath build.noindex \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            OTHER_CODE_SIGN_FLAGS= \
+            test > test.log 2>&1 || intStatus=$?
+          # Show each failed expectation and the overall result.
+          grep -E "error:|✘|Test run with|TEST (SUCCEEDED|FAILED)" test.log || true
+          exit $intStatus
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-${{ matrix.configuration }}
+          path: |
+            build.log
+            test.log
+          if-no-files-found: ignore
+
+      # Unsigned app for quick testing on your own Mac (right-click → Open the first time).
+      - name: Package app
+        if: matrix.configuration == 'Release'
+        run: ditto -c -k --keepParent build.noindex/Build/Products/Release/PerchDock.app PerchDock-unsigned.zip
+
+      - name: Upload app
+        if: matrix.configuration == 'Release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: PerchDock-unsigned
+          path: PerchDock-unsigned.zip
+          retention-days: 14
