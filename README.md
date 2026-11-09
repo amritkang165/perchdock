@@ -62,11 +62,11 @@ The built-in Dock shows one icon per app and little else. PerchDock keeps everyt
 
 ### From a release
 
-1. Download the latest `PerchDock-x.y.z.dmg` from the Releases page.
+1. Download the latest `PerchDock-x.y.z.dmg` from the [Releases page](https://github.com/slynck/perchdock/releases/latest).
 2. Open it and drag **PerchDock** into **Applications**.
 3. Open PerchDock from Applications.
 
-> If macOS says PerchDock "can't be opened because Apple cannot check it", the build you downloaded isn't notarized. Right-click PerchDock in Applications, choose **Open**, then confirm. You only need to do this once.
+> Releases aren't notarized by Apple yet, so the first time you open PerchDock macOS says it can't check the app. Click **Done**, then go to **System Settings → Privacy & Security** and click **Open Anyway** next to PerchDock. You only need to do this once.
 
 ### Build from source
 
@@ -81,6 +81,8 @@ scripts/build.sh --install
 `--install` copies the app to **Applications** and launches it from there. Use `--run` instead to launch it straight from the `build.noindex/` folder while developing (the `.noindex` suffix keeps that copy out of Spotlight).
 
 `scripts/build.sh` creates a local signing identity the first time it runs, so the macOS permissions you grant survive rebuilds. To make a drag-to-install DMG in `dist/`, run `scripts/release.sh`.
+
+To publish a release, set `MARKETING_VERSION` (and bump `CURRENT_PROJECT_VERSION`) in `project.yml`, merge to `main`, then push a matching tag, for example `git tag v0.3.0 && git push origin v0.3.0`. The release workflow tests, builds and publishes the DMG.
 
 To run the unit tests (dock layout, live icon clock hands, menu matching, settings migration):
 
@@ -154,7 +156,7 @@ Sources/PerchDock/
 Tests/PerchDockTests/  Unit tests (Swift Testing)
 scripts/          Build, release, signing setup and native Dock restore
 project.yml       XcodeGen project definition (the .xcodeproj is generated)
-.github/          CI: builds Debug and Release and runs the unit tests on every pull request and push to main
+.github/          CI (build and test every pull request) and the release workflow (a vX.Y.Z tag publishes a DMG)
 ```
 
 ## License

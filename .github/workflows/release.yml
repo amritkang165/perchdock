@@ -1,0 +1,110 @@
+# Publishes a GitHub release when a version tag is pushed:
+#   git tag v0.2.0 && git push origin v0.2.0
+# The tag must match MARKETING_VERSION in project.yml. The app is ad-hoc signed
+# (there's no Developer ID yet), so it isn't notarized; the release notes explain
+# how to open it the first time.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Never run two releases of the same tag at once, and never cancel one halfway.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      # Same pinned Xcode as CI.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      # Ad-hoc signing: works without any certificate on the runner.
+      SIGNING_OVERRIDES: CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual OTHER_CODE_SIGN_FLAGS=
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # A tag like v0.2.0 must ship an app that calls itself 0.2.0.
+      - name: Check tag matches app version
+        run: |
+          strTagVersion="${GITHUB_REF_NAME#v}"
+          strAppVersion=$(sed -nE 's/^ *MARKETING_VERSION: *"?([^" ]+)"?/\1/p' project.yml)
+          echo "Tag: $strTagVersion, app: $strAppVersion"
+          if [[ "$strTagVersion" != "$strAppVersion" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match MARKETING_VERSION $strAppVersion in project.yml"
+            exit 1
+          fi
+          echo "VERSION=$strAppVersion" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: |
+          intStatus=0
+          xcodebuild -project PerchDock.xcodeproj -scheme PerchDock \
+            -destination 'platform=macOS' -derivedDataPath build.noindex \
+            $SIGNING_OVERRIDES test > test.log 2>&1 || intStatus=$?
+          grep -E "error:|✘|Test run with|TEST (SUCCEEDED|FAILED)" test.log || true
+          exit $intStatus
+
+      # The generic destination builds a universal app (Apple silicon and Intel).
+      - name: Build
+        run: |
+          intStatus=0
+          xcodebuild -project PerchDock.xcodeproj -scheme PerchDock \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath build.noindex \
+            $SIGNING_OVERRIDES build > build.log 2>&1 || intStatus=$?
+          grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" build.log || true
+          exit $intStatus
+
+      - name: Verify app
+        run: |
+          strApp=build.noindex/Build/Products/Release/PerchDock.app
+          codesign --verify --deep --strict --verbose=2 "$strApp"
+          lipo -archs "$strApp/Contents/MacOS/PerchDock"
+
+      - name: Package DMG
+        run: |
+          strStage=$(mktemp -d)
+          cp -R build.noindex/Build/Products/Release/PerchDock.app "$strStage/"
+          # The Applications link lets people drag the app straight into place.
+          ln -s /Applications "$strStage/Applications"
+          hdiutil create -quiet -volname "PerchDock $VERSION" -srcfolder "$strStage" \
+            -format UDZO "PerchDock-$VERSION.dmg"
+          shasum -a 256 "PerchDock-$VERSION.dmg" > "PerchDock-$VERSION.dmg.sha256"
+          cat "PerchDock-$VERSION.dmg.sha256"
+
+      # The install notes go first, then GitHub's list of merged pull requests.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "PerchDock-$VERSION.dmg" "PerchDock-$VERSION.dmg.sha256" \
+            --title "PerchDock $VERSION" \
+            --notes-file .github/release-notes.md \
+            --generate-notes \
+            --latest \
+            --verify-tag
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-logs
+          path: |
+            build.log
+            test.log
+          if-no-files-found: ignore
