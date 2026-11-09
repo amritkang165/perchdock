@@ -1,18 +1,18 @@
 <p align="center">
-  <img src="docs/images/icon.png" alt="MacDock app icon" width="128">
+  <img src="docs/images/icon.png" alt="PerchDock app icon" width="128">
 </p>
 
-# MacDock
+# PerchDock
 
-A faster, smarter Dock for macOS, with live window previews, app groups, a built-in music player and Liquid Glass styling. MacDock takes over from the built-in Dock while it runs, and hands control back the moment you quit.
+A faster, smarter Dock for macOS, with live window previews, app groups, a built-in music player and Liquid Glass styling. PerchDock takes over from the built-in Dock while it runs, and hands control back the moment you quit.
 
 <p align="center">
-  <img src="docs/images/dock-bottom.png" alt="MacDock at the bottom of the screen with app groups, Downloads and the Now Playing widget" width="720">
+  <img src="docs/images/dock-bottom.png" alt="PerchDock at the bottom of the screen with app groups, Downloads and the Now Playing widget" width="720">
 </p>
 
-## Why MacDock
+## Why PerchDock
 
-The built-in Dock shows one icon per app and little else. MacDock keeps everything you're used to (clicking, dragging, badges, bouncing, right-click menus, hot corners) and adds the things people install three separate utilities for.
+The built-in Dock shows one icon per app and little else. PerchDock keeps everything you're used to (clicking, dragging, badges, bouncing, right-click menus, hot corners) and adds the things people install three separate utilities for.
 
 ### Windows
 
@@ -34,7 +34,7 @@ The built-in Dock shows one icon per app and little else. MacDock keeps everythi
 - **Battery.** Your charge level at a glance.
 
 <p align="center">
-  <img src="docs/images/dock-left-flyout.png" alt="MacDock on the left edge with the Now Playing controls slid out" width="340">
+  <img src="docs/images/dock-left-flyout.png" alt="PerchDock on the left edge with the Now Playing controls slid out" width="340">
 </p>
 
 ### Looks and placement
@@ -46,7 +46,7 @@ The built-in Dock shows one icon per app and little else. MacDock keeps everythi
 
 ### Menus
 
-- **Quick settings from the menu bar.** Click the MacDock icon in the menu bar, or right-click an empty part of the dock and open **Dock Options**. From there you can change position, auto-hide, magnification, transparency and widgets without opening Settings.
+- **Quick settings from the menu bar.** Click the PerchDock icon in the menu bar, or right-click an empty part of the dock and open **Dock Options**. From there you can change position, auto-hide, magnification, transparency and widgets without opening Settings.
 - **App menu actions.** Right-clicking an app shows the same extra actions the built-in Dock would offer, such as **New Window** or **New Incognito Window** in Chrome, or **Pause** and **Next** in Spotify.
 
 ## Requirements
@@ -58,11 +58,11 @@ The built-in Dock shows one icon per app and little else. MacDock keeps everythi
 
 ### From a release
 
-1. Download the latest `MacDock-x.y.z.dmg` from the Releases page.
-2. Open it and drag **MacDock** into **Applications**.
-3. Open MacDock from Applications.
+1. Download the latest `PerchDock-x.y.z.dmg` from the Releases page.
+2. Open it and drag **PerchDock** into **Applications**.
+3. Open PerchDock from Applications.
 
-> If macOS says MacDock "can't be opened because Apple cannot check it", the build you downloaded isn't notarized. Right-click MacDock in Applications, choose **Open**, then confirm. You only need to do this once.
+> If macOS says PerchDock "can't be opened because Apple cannot check it", the build you downloaded isn't notarized. Right-click PerchDock in Applications, choose **Open**, then confirm. You only need to do this once.
 
 ### Build from source
 
@@ -78,7 +78,7 @@ scripts/build.sh --run
 
 ## First launch: permissions
 
-MacDock asks for a few permissions so it can do what the built-in Dock does. Grant them in **System Settings → Privacy & Security**.
+PerchDock asks for a few permissions so it can do what the built-in Dock does. Grant them in **System Settings → Privacy & Security**.
 
 | Permission | What it's used for |
 | --- | --- |
@@ -86,11 +86,11 @@ MacDock asks for a few permissions so it can do what the built-in Dock does. Gra
 | Screen Recording | Live window preview thumbnails. |
 | Automation (Finder, Spotify) | Emptying the Trash, and fetching Spotify cover art. Asked for the first time each is used. |
 
-MacDock works without Screen Recording. You'll see app icons in place of window thumbnails.
+PerchDock works without Screen Recording. You'll see app icons in place of window thumbnails.
 
-## Using MacDock
+## Using PerchDock
 
-- **Settings:** click the MacDock icon in the menu bar, then **Settings…** (or press ⌘, while the menu is open).
+- **Settings:** click the PerchDock icon in the menu bar, then **Settings…** (or press ⌘, while the menu is open).
 - **Rearrange:** drag icons along the dock. Drag one off the dock to remove it.
 - **Pin an app:** right-click it and choose **Keep in Dock**.
 - **Add a folder:** right-click an empty part of the dock and choose **Add Folder to Dock…**.
@@ -98,11 +98,11 @@ MacDock works without Screen Recording. You'll see app icons in place of window 
 
 ## What happens to the built-in Dock
 
-MacDock doesn't delete or modify anything in macOS. While it runs, it tells the built-in Dock to stay hidden, the same way other dock replacements do. The built-in Dock process keeps running, so Mission Control, Spaces, app switching and hot corners keep working.
+PerchDock doesn't delete or modify anything in macOS. While it runs, it tells the built-in Dock to stay hidden, the same way other dock replacements do. The built-in Dock process keeps running, so Mission Control, Spaces, app switching and hot corners keep working.
 
-When you quit MacDock, the built-in Dock comes back. You can turn this off with **Hide Native Dock** in the menu bar menu.
+When you quit PerchDock, the built-in Dock comes back. You can turn this off with **Hide Native Dock** in the menu bar menu.
 
-**If MacDock crashes or is force-quit** and the built-in Dock stays hidden, run:
+**If PerchDock crashes or is force-quit** and the built-in Dock stays hidden, run:
 
 ```bash
 scripts/restore-native-dock.sh
@@ -119,21 +119,21 @@ killall Dock
 
 ## Uninstall
 
-1. Quit MacDock from its menu bar icon. The built-in Dock reappears.
-2. Delete MacDock from Applications.
-3. Optionally remove its settings: `defaults delete com.slynck.macdock`.
+1. Quit PerchDock from its menu bar icon. The built-in Dock reappears.
+2. Delete PerchDock from Applications.
+3. Optionally remove its settings: `defaults delete com.slynck.perchdock`.
 4. Optionally remove its entries under **System Settings → Privacy & Security**.
 
 ## Known limitations
 
 - Dock icons are static. Apps that animate their built-in Dock icon, such as Calendar's date or Activity Monitor's graphs, show their regular icon.
-- The Now Playing widget relies on a private macOS framework, so a future macOS update could break it until MacDock is updated. MacDock isn't eligible for the Mac App Store for the same reason.
+- The Now Playing widget relies on a private macOS framework, so a future macOS update could break it until PerchDock is updated. PerchDock isn't eligible for the Mac App Store for the same reason.
 - Builds made on your own Mac are signed with a local certificate and only run on that Mac. Sharing builds with other people needs an Apple Developer ID and notarization.
 
 ## Project layout
 
 ```
-Sources/MacDock/
+Sources/PerchDock/
   App/            App lifecycle, menu bar icon, display management
   Dock/           The dock window, tiles, widgets, previews and glass styling
   Services/       App tracking, window control, Now Playing, badges, native Dock menus

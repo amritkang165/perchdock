@@ -9,7 +9,7 @@ import Foundation
 ///
 /// A hidden Dock still bounces icons (on launch and for attention), and the bounce
 /// pokes up above the screen edge, so bouncing is turned off while it's hidden too.
-/// MacDock does its own launch and attention bounces.
+/// PerchDock does its own launch and attention bounces.
 @MainActor
 final class NativeDockController {
     /// The user's native Dock values captured before we changed them.
@@ -28,7 +28,7 @@ final class NativeDockController {
     private static let strSnapshotKey = "NativeDockSnapshot"
     private static let fltHiddenDelay: Double = 1000
 
-    /// Background shell that restores the Dock if MacDock dies without quitting cleanly.
+    /// Background shell that restores the Dock if PerchDock dies without quitting cleanly.
     private var objWatchdog: Process?
 
     /// True when we've hidden the Dock and still hold the user's original values.
@@ -88,16 +88,16 @@ final class NativeDockController {
 
     // MARK: - Crash safety
 
-    /// Starts a detached shell that waits for MacDock to exit and, if the Dock is
+    /// Starts a detached shell that waits for PerchDock to exit and, if the Dock is
     /// still hidden by us (a crash or force quit skipped `restore()`), puts the
     /// user's original values back so they're never left without a dock.
     ///
-    /// The shell outlives MacDock (it's reparented to launchd) and does nothing
+    /// The shell outlives PerchDock (it's reparented to launchd) and does nothing
     /// after a clean quit, because `restore()` stops it and clears the snapshot.
     private func startWatchdog() {
         guard objWatchdog?.isRunning != true, let objSnapshot = loadSnapshot() else { return }
         let strDomain = Self.strDockDomain
-        let strOwnDomain = Bundle.main.bundleIdentifier ?? "com.slynck.macdock"
+        let strOwnDomain = Bundle.main.bundleIdentifier ?? "com.slynck.perchdock"
 
         /// `defaults` command restoring one key (or deleting it if it was unset).
         func restoreCommand(_ strKey: String, _ strTypedValue: String?) -> String {
@@ -113,7 +113,7 @@ final class NativeDockController {
         ]
 
         // Poll our PID; once it's gone, restore only if the snapshot is still there and
-        // no newer MacDock has taken over (a quick relaunch re-hides the Dock itself).
+        // no newer PerchDock has taken over (a quick relaunch re-hides the Dock itself).
         let strProcessName = ProcessInfo.processInfo.processName
         let strScript = """
         while /bin/kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do /bin/sleep 2; done
@@ -132,7 +132,7 @@ final class NativeDockController {
             try objProcess.run()
             objWatchdog = objProcess
         } catch {
-            NSLog("MacDock: couldn't start the Dock watchdog: \(error)")
+            NSLog("PerchDock: couldn't start the Dock watchdog: \(error)")
         }
     }
 
@@ -203,13 +203,13 @@ final class NativeDockController {
             try objProcess.run()
             objProcess.waitUntilExit()
         } catch {
-            NSLog("MacDock: failed to run \(strPath): \(error)")
+            NSLog("PerchDock: failed to run \(strPath): \(error)")
         }
     }
 
     // MARK: - Snapshot persistence
 
-    /// Persists the user's original Dock values in MacDock's own defaults.
+    /// Persists the user's original Dock values in PerchDock's own defaults.
     /// - Parameter objSnapshot: Values to remember.
     private func saveSnapshot(_ objSnapshot: Snapshot) {
         if let objData = try? JSONEncoder().encode(objSnapshot) {

@@ -1,15 +1,15 @@
 import AppKit
 import ApplicationServices
 
-/// Helpers for the Accessibility (AX) permission MacDock needs to list and raise windows.
+/// Helpers for the Accessibility (AX) permission PerchDock needs to list and raise windows.
 @MainActor
 enum AccessibilityPermission {
-    /// Whether MacDock is currently trusted for Accessibility.
+    /// Whether PerchDock is currently trusted for Accessibility.
     static var blnIsTrusted: Bool {
         AXIsProcessTrusted()
     }
 
-    /// Shows the system Accessibility prompt if MacDock isn't trusted yet.
+    /// Shows the system Accessibility prompt if PerchDock isn't trusted yet.
     /// The string key mirrors `kAXTrustedCheckOptionPrompt`, whose global var
     /// isn't safe to touch under Swift 6 strict concurrency.
     static func requestIfNeeded() {

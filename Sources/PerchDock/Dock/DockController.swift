@@ -43,7 +43,7 @@ final class DockController {
     private let objGrid = GridPopoverController()
     private let objMouseMonitor = MouseMonitor()
 
-    /// Opens MacDock's Settings window (provided by the app delegate).
+    /// Opens PerchDock's Settings window (provided by the app delegate).
     var onOpenSettings: (() -> Void)?
 
     // Display the dock is on (`nil` = main display).
@@ -2217,7 +2217,7 @@ final class DockController {
 
     // MARK: - Middle-click to quit
 
-    /// Watches middle-button releases (in MacDock and system-wide, since AppKit
+    /// Watches middle-button releases (in PerchDock and system-wide, since AppKit
     /// doesn't reliably route them to the dock's panels) to quit apps.
     private func installMiddleClickMonitors() {
         objLocalMiddleMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseUp) { [weak self] objEvent in
@@ -2301,7 +2301,7 @@ final class DockController {
             objAlert.addButton(withTitle: "Quit")
             objAlert.addButton(withTitle: "Cancel")
 
-            // The alert needs MacDock in front; give focus back if the user cancels.
+            // The alert needs PerchDock in front; give focus back if the user cancels.
             let objPrevious = NSWorkspace.shared.frontmostApplication
             hidePicker()
             blnMenuOpen = true

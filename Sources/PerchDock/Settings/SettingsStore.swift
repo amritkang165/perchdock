@@ -291,7 +291,7 @@ final class SettingsStore {
     /// Seconds of hovering an icon before window previews open.
     var fltPreviewDelay: Double { didSet { objDefaults.set(fltPreviewDelay, forKey: Key.strPreviewDelay) } }
 
-    /// Whether the native macOS Dock is hidden while MacDock runs.
+    /// Whether the native macOS Dock is hidden while PerchDock runs.
     var blnHideNativeDock: Bool {
         didSet {
             objDefaults.set(blnHideNativeDock, forKey: Key.strHideNativeDock)
@@ -388,7 +388,7 @@ final class SettingsStore {
     /// Running-app indicator look.
     var enmIndicatorStyle: IndicatorStyle { didSet { objDefaults.set(enmIndicatorStyle.rawValue, forKey: Key.strIndicatorStyle) } }
 
-    /// Whether MacDock starts at login (mirrors the system's login item state).
+    /// Whether PerchDock starts at login (mirrors the system's login item state).
     private(set) var blnLaunchAtLogin: Bool
 
     /// Called when the native Dock preference changes, so it can be applied.
@@ -483,7 +483,7 @@ final class SettingsStore {
         }
     }
 
-    /// Registers or removes MacDock as a login item.
+    /// Registers or removes PerchDock as a login item.
     /// - Parameter blnEnabled: Desired state.
     func setLaunchAtLogin(_ blnEnabled: Bool) {
         do {
@@ -493,7 +493,7 @@ final class SettingsStore {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            NSLog("MacDock: launch at login change failed: \(error)")
+            NSLog("PerchDock: launch at login change failed: \(error)")
         }
         // Reflect what the system actually did, not what was requested.
         blnLaunchAtLogin = SMAppService.mainApp.status == .enabled

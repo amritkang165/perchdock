@@ -18,7 +18,7 @@ enum NativeDockMenuService {
     /// Wait after a menu closes before refreshing (lets a chosen action finish first).
     private static let objRefreshDelay: Duration = .seconds(1)
 
-    /// Items every app gets, which MacDock's own menu already covers.
+    /// Items every app gets, which PerchDock's own menu already covers.
     private static let setStrStandard: Set<String> = [
         "Options", "Show All Windows", "Hide", "Hide Others", "Show", "Quit", "Force Quit", "Open",
         "Keep in Dock", "Remove from Dock", "Open at Login", "Show in Finder", "Show Recents",
@@ -91,7 +91,7 @@ enum NativeDockMenuService {
 
         var arrObjResult: [Entry] = []
         for arrSection in arrArrSections where !arrSection.isEmpty {
-            // The Dock lists the app's windows as one section; MacDock shows its own.
+            // The Dock lists the app's windows as one section; PerchDock shows its own.
             if arrSection.contains(where: { objEntry in arrStrWindowNames.contains { matches(objEntry.strTitle, strWindowTitle: $0) } }) {
                 continue
             }

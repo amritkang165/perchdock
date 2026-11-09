@@ -7,7 +7,7 @@ import CoreServices
 /// Two sources, best first:
 /// 1. macOS's own per-app recent-documents list (exactly what the app's
 ///    File › Open Recent shows). It lives in a protected folder, so it's only
-///    readable when MacDock has Full Disk Access.
+///    readable when PerchDock has Full Disk Access.
 /// 2. Otherwise Spotlight: files the app is the default opener for, ordered by
 ///    when they were last opened.
 enum RecentDocumentsService {

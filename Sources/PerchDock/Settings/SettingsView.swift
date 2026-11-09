@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// MacDock's settings: Appearance, Behavior and General tabs. Every control
+/// PerchDock's settings: Appearance, Behavior and General tabs. Every control
 /// writes straight to `SettingsStore`, so the dock updates live.
 struct SettingsView: View {
     @Bindable var objSettings: SettingsStore
@@ -188,12 +188,12 @@ private struct GeneralTab: View {
         Form {
             Section {
                 Toggle("Hide the native macOS Dock", isOn: $objSettings.blnHideNativeDock)
-                Toggle("Launch MacDock at login", isOn: Binding(
+                Toggle("Launch PerchDock at login", isOn: Binding(
                     get: { objSettings.blnLaunchAtLogin },
                     set: { objSettings.setLaunchAtLogin($0) }
                 ))
             } footer: {
-                Text("The native Dock comes back automatically when MacDock quits.")
+                Text("The native Dock comes back automatically when PerchDock quits.")
                     .foregroundStyle(.secondary)
             }
 

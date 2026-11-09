@@ -51,7 +51,7 @@ final class BatteryService {
     }
 
     /// Posted (on the main run loop) when IOKit reports a power-source change.
-    nonisolated private static let objChangedNotification = Notification.Name("MacDock.BatteryChanged")
+    nonisolated private static let objChangedNotification = Notification.Name("PerchDock.BatteryChanged")
 
     /// Re-reads the internal battery.
     func refresh() {

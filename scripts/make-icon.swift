@@ -98,7 +98,7 @@ if let intFlag = arrStrArgs.firstIndex(of: "--preview"), intFlag + 1 < arrStrArg
 }
 
 // Full mode: write every macOS AppIcon slot (16–512 pt at 1x and 2x) plus Contents.json.
-let strSetDir = "Sources/MacDock/Resources/Assets.xcassets/AppIcon.appiconset"
+let strSetDir = "Sources/PerchDock/Resources/Assets.xcassets/AppIcon.appiconset"
 try! FileManager.default.createDirectory(atPath: strSetDir, withIntermediateDirectories: true)
 var arrDictImages: [[String: String]] = []
 for intPoints in [16, 32, 128, 256, 512] {
@@ -115,5 +115,5 @@ try! JSONSerialization.data(withJSONObject: dictContents, options: [.prettyPrint
     .write(to: URL(fileURLWithPath: "\(strSetDir)/Contents.json"))
 let dictCatalog: [String: Any] = ["info": ["version": 1, "author": "xcode"]]
 try! JSONSerialization.data(withJSONObject: dictCatalog, options: [.prettyPrinted])
-    .write(to: URL(fileURLWithPath: "Sources/MacDock/Resources/Assets.xcassets/Contents.json"))
+    .write(to: URL(fileURLWithPath: "Sources/PerchDock/Resources/Assets.xcassets/Contents.json"))
 print("Wrote \(strSetDir)")

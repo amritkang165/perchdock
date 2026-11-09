@@ -39,7 +39,7 @@ final class PeekController {
     private var objStreamOutput: PeekStreamOutput?
     private var objStartTask: Task<Void, Never>?
     private var objFallbackTask: Task<Void, Never>?
-    private let objSampleQueue = DispatchQueue(label: "MacDock.peek.frames", qos: .userInteractive)
+    private let objSampleQueue = DispatchQueue(label: "PerchDock.peek.frames", qos: .userInteractive)
 
     /// Builds the (hidden) window layer.
     init() {

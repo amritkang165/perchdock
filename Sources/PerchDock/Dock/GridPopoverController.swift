@@ -508,7 +508,7 @@ final class GridPopoverController: NSObject, NSDraggingSource {
     private func beginTitleEditing() {
         guard !objState.blnEditingTitle else { return }
 
-        // Typing needs a key window, which needs MacDock active for a moment.
+        // Typing needs a key window, which needs PerchDock active for a moment.
         objPreviousApp = NSWorkspace.shared.frontmostApplication
         objPanel.blnAllowsKey = true
         NSApp.activate()
@@ -634,7 +634,7 @@ final class GridPopoverController: NSObject, NSDraggingSource {
             }
         }
         if objKeyMonitor == nil {
-            // Global key monitoring needs Accessibility, which MacDock already has.
+            // Global key monitoring needs Accessibility, which PerchDock already has.
             objKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] objEvent in
                 guard objEvent.keyCode == 53 else { return }
                 MainActor.assumeIsolated { self?.hide() }

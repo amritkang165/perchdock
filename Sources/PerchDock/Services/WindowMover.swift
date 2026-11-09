@@ -10,7 +10,7 @@ import os
 /// macOS carries a held window along. The cursor is put back afterwards.
 @MainActor
 enum WindowMover {
-    private static let objLogger = Logger(subsystem: "com.slynck.macdock", category: "move")
+    private static let objLogger = Logger(subsystem: "com.slynck.perchdock", category: "move")
 
     /// Left / Right arrow key codes (Control-Arrow switches desktops).
     private static let intKeyLeft: CGKeyCode = 123

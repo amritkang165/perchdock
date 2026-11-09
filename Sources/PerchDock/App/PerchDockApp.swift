@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// MacDock entry point. All real setup happens in `AppDelegate`; the SwiftUI
+/// PerchDock entry point. All real setup happens in `AppDelegate`; the SwiftUI
 /// `App` only exists to host the (future) Settings scene.
 @main
-struct MacDockApp: App {
+struct PerchDockApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var objAppDelegate
 
     var body: some Scene {

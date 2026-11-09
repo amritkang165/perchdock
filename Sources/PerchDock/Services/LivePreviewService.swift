@@ -110,7 +110,7 @@ final class LivePreviewService {
 private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
     /// Debug: log delivered frames per second (`--log-fps`).
     private static let blnLogFps = CommandLine.arguments.contains("--log-fps")
-    private static let objLogger = Logger(subsystem: "com.slynck.macdock", category: "fps")
+    private static let objLogger = Logger(subsystem: "com.slynck.perchdock", category: "fps")
 
     private let objView: LiveThumbnailView
     private var intFrameCount = 0

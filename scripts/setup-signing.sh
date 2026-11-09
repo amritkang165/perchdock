@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# One-time setup: creates a self-signed "MacDock Local Signing" identity in a
+# One-time setup: creates a self-signed "PerchDock Local Signing" identity in a
 # dedicated keychain, so every build has the same signature and macOS keeps
-# MacDock's Accessibility permission across rebuilds.
+# PerchDock's Accessibility permission across rebuilds.
 #
 # The dedicated keychain has its own known password, so codesign never prompts
 # for (or depends on) your login keychain password.
 set -euo pipefail
 
-KEYCHAIN="$HOME/Library/Keychains/macdock-signing.keychain-db"
-KEYCHAIN_PW="macdock-local"
-IDENTITY="MacDock Local Signing"
+KEYCHAIN="$HOME/Library/Keychains/perchdock-signing.keychain-db"
+KEYCHAIN_PW="perchdock-local"
+IDENTITY="PerchDock Local Signing"
 
 if security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "$IDENTITY"; then
   echo "Signing identity already set up."

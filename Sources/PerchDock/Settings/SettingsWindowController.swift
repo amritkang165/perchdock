@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Owns the Settings window. MacDock is an agent app with no main menu, so the
+/// Owns the Settings window. PerchDock is an agent app with no main menu, so the
 /// window is managed directly rather than through SwiftUI's `Settings` scene.
 @MainActor
 final class SettingsWindowController {
@@ -18,12 +18,12 @@ final class SettingsWindowController {
         self.objThumbnailService = objThumbnailService
     }
 
-    /// Shows the Settings window and brings MacDock forward so it gets focus.
+    /// Shows the Settings window and brings PerchDock forward so it gets focus.
     func show() {
         if objWindow == nil {
             let objHosting = NSHostingController(rootView: SettingsView(objSettings: objSettings, objThumbnailService: objThumbnailService))
             let objNewWindow = NSWindow(contentViewController: objHosting)
-            objNewWindow.title = "MacDock Settings"
+            objNewWindow.title = "PerchDock Settings"
             objNewWindow.styleMask = [.titled, .closable]
             objNewWindow.isReleasedWhenClosed = false
             objNewWindow.center()

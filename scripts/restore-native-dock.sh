@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Emergency restore: brings the native macOS Dock back to default auto-hide behavior.
-# Use this if MacDock was force-quit while the native Dock was hidden.
+# Use this if PerchDock was force-quit while the native Dock was hidden.
 set -euo pipefail
 
 defaults delete com.apple.dock autohide-delay 2>/dev/null || true

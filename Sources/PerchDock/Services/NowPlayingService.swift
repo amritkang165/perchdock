@@ -150,7 +150,7 @@ final class NowPlayingService {
             try objProcess.run()
             objHelper = objProcess
         } catch {
-            NSLog("MacDock: couldn't start Now Playing helper: \(error)")
+            NSLog("PerchDock: couldn't start Now Playing helper: \(error)")
         }
     }
 
@@ -274,7 +274,7 @@ final class NowPlayingService {
     /// that track is still playing when it arrives.
     ///
     /// Spotify's AppleScript gives the cover's URL. The first time, macOS asks whether
-    /// MacDock may control Spotify; if that's declined, the tile keeps the Spotify icon.
+    /// PerchDock may control Spotify; if that's declined, the tile keeps the Spotify icon.
     /// - Parameter strTrackKey: Track the artwork is for.
     private func fetchSpotifyArtwork(strTrackKey: String) {
         guard strArtworkFetchKey != strTrackKey else { return }

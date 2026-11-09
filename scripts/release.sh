@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds MacDock (Release) and packages it as a drag-to-install DMG in dist/.
+# Builds PerchDock (Release) and packages it as a drag-to-install DMG in dist/.
 #
 # Usage: scripts/release.sh
 #
@@ -17,21 +17,21 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 scripts/setup-signing.sh >/dev/null
-security unlock-keychain -p macdock-local "$HOME/Library/Keychains/macdock-signing.keychain-db"
+security unlock-keychain -p perchdock-local "$HOME/Library/Keychains/perchdock-signing.keychain-db"
 
 xcodegen generate --quiet
 
 xcodebuild \
-  -project MacDock.xcodeproj \
-  -scheme MacDock \
+  -project PerchDock.xcodeproj \
+  -scheme PerchDock \
   -configuration Release \
   -derivedDataPath build \
   -quiet \
   build
 
-APP_PATH="build/Build/Products/Release/MacDock.app"
+APP_PATH="build/Build/Products/Release/PerchDock.app"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist")
-DMG_PATH="dist/MacDock-$VERSION.dmg"
+DMG_PATH="dist/PerchDock-$VERSION.dmg"
 
 # Stage the app next to an /Applications link so users can drag to install.
 STAGE_DIR=$(mktemp -d)
@@ -41,7 +41,7 @@ ln -s /Applications "$STAGE_DIR/Applications"
 
 mkdir -p dist
 rm -f "$DMG_PATH"
-hdiutil create -quiet -volname "MacDock $VERSION" -srcfolder "$STAGE_DIR" -format UDZO "$DMG_PATH"
+hdiutil create -quiet -volname "PerchDock $VERSION" -srcfolder "$STAGE_DIR" -format UDZO "$DMG_PATH"
 echo "Built: $DMG_PATH"
 
 # Sparkle signature for the appcast entry (needs a key from generate_keys).

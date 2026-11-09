@@ -4,7 +4,11 @@ import os
 /// Owns the app's long-lived services and the menu bar status item.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private let objSettings = SettingsStore()
+    private let objSettings: SettingsStore = {
+        // Settings must be carried over from the old name before SettingsStore reads them.
+        LegacyDefaultsMigration.run()
+        return SettingsStore()
+    }()
     private lazy var objAppTracker = AppTracker(objSettings: objSettings)
     private let objWindowService = WindowService()
     private let objThumbnailService = ThumbnailService()
@@ -188,11 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Status item
 
-    /// Creates the menu bar item that hosts MacDock's controls. The menu is filled
+    /// Creates the menu bar item that hosts PerchDock's controls. The menu is filled
     /// in `menuNeedsUpdate(_:)` each time it opens, so checkmarks match the settings.
     private func buildStatusItem() {
         let objItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        objItem.button?.image = NSImage(systemSymbolName: "dock.rectangle", accessibilityDescription: "MacDock")
+        objItem.button?.image = NSImage(systemSymbolName: "dock.rectangle", accessibilityDescription: "PerchDock")
 
         let objMenu = NSMenu()
         objMenu.delegate = self
@@ -221,7 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         objMenu.addItem(.separator())
 
-        let objQuitItem = NSMenuItem(title: "Quit MacDock", action: #selector(quit), keyEquivalent: "q")
+        let objQuitItem = NSMenuItem(title: "Quit PerchDock", action: #selector(quit), keyEquivalent: "q")
         objQuitItem.target = self
         objMenu.addItem(objQuitItem)
     }
@@ -236,7 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         objUpdates.checkForUpdates()
     }
 
-    /// Quits MacDock (the termination hook restores the native Dock).
+    /// Quits PerchDock (the termination hook restores the native Dock).
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -246,10 +250,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Handles debug launch arguments.
     /// - `--cycle-pickers`: stress-tests picker switching.
     /// - `--dump-windows`: logs every app's windows.
-    /// - `--dump-recents=BUNDLE_ID,…`: writes apps' recent documents to /tmp/macdock-recents.txt.
+    /// - `--dump-recents=BUNDLE_ID,…`: writes apps' recent documents to /tmp/perchdock-recents.txt.
     /// - `--open-settings`: opens the Settings window.
     /// - `--flyout`: opens the side-dock Now Playing fly-out.
-    /// - `--dock-menu=BUNDLE_ID`: writes the app's borrowed native Dock actions to /tmp/macdock-dockmenu.txt.
+    /// - `--dock-menu=BUNDLE_ID`: writes the app's borrowed native Dock actions to /tmp/perchdock-dockmenu.txt.
     /// - `--dock-action=BUNDLE_ID,TITLE`: presses an item in the app's native Dock menu.
     /// - Parameter objController: The dock controller.
     private func runDebugArguments(_ objController: DockController) {
@@ -342,7 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if arrStrArgs.contains("--fake-badges") {
             objDockBadges.debugFake(strBadgeId: "com.google.Chrome", strProgressId: "com.apple.finder")
         }
-        // `--dock-menu=BUNDLE_ID`: writes the app's borrowed Dock actions to /tmp/macdock-dockmenu.txt.
+        // `--dock-menu=BUNDLE_ID`: writes the app's borrowed Dock actions to /tmp/perchdock-dockmenu.txt.
         if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--dock-menu=") }) {
             let strBundleId = String(strArg.dropFirst("--dock-menu=".count))
             Task {
@@ -359,7 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     case .separator: "---"
                     }
                 }
-                try? arrStrLines.joined(separator: "\n").write(toFile: "/tmp/macdock-dockmenu.txt", atomically: true, encoding: .utf8)
+                try? arrStrLines.joined(separator: "\n").write(toFile: "/tmp/perchdock-dockmenu.txt", atomically: true, encoding: .utf8)
             }
         }
 
@@ -383,7 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
-        // `--dump-recents=BUNDLE_ID[,BUNDLE_ID…]`: writes each app's recent documents to /tmp/macdock-recents.txt.
+        // `--dump-recents=BUNDLE_ID[,BUNDLE_ID…]`: writes each app's recent documents to /tmp/perchdock-recents.txt.
         if let strArg = arrStrArgs.first(where: { $0.hasPrefix("--dump-recents=") }) {
             var strReport = ""
             for strId in strArg.dropFirst("--dump-recents=".count).split(separator: ",").map(String.init) {
@@ -393,13 +397,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 strReport += "\(strId) (\(ContinuousClock.now - objStart)):\n"
                 strReport += arrObjDocs.map { "  \($0.path)\n" }.joined()
             }
-            try? strReport.write(toFile: "/tmp/macdock-recents.txt", atomically: true, encoding: .utf8)
+            try? strReport.write(toFile: "/tmp/perchdock-recents.txt", atomically: true, encoding: .utf8)
         }
         if arrStrArgs.contains("--dump-dock") {
-            objDockBadges.debugDump(objLogger: Logger(subsystem: "com.slynck.macdock", category: "dump"))
+            objDockBadges.debugDump(objLogger: Logger(subsystem: "com.slynck.perchdock", category: "dump"))
         }
         if arrStrArgs.contains("--dump-windows") {
-            let objLogger = Logger(subsystem: "com.slynck.macdock", category: "dump")
+            let objLogger = Logger(subsystem: "com.slynck.perchdock", category: "dump")
             for objItem in objAppTracker.arrObjItems {
                 guard let objApp = objItem.objRunningApp else { continue }
                 let arrObjWindows = objWindowService.windows(for: objApp)

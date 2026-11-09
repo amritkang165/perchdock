@@ -103,7 +103,7 @@ enum StackService {
             // Usually: Finder automation was declined. Point the user at the setting.
             let objFail = NSAlert()
             objFail.messageText = "Couldn’t empty the Trash"
-            objFail.informativeText = "Allow MacDock to control Finder in System Settings → Privacy & Security → Automation."
+            objFail.informativeText = "Allow PerchDock to control Finder in System Settings → Privacy & Security → Automation."
             objFail.runModal()
         }
     }

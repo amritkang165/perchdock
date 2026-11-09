@@ -2,8 +2,8 @@ import AppKit
 import ApplicationServices
 import os
 
-/// Window-discovery diagnostics: `log stream --predicate 'subsystem == "com.slynck.macdock"'`.
-private let objLogger = Logger(subsystem: "com.slynck.macdock", category: "windows")
+/// Window-discovery diagnostics: `log stream --predicate 'subsystem == "com.slynck.perchdock"'`.
+private let objLogger = Logger(subsystem: "com.slynck.perchdock", category: "windows")
 
 /// A single top-level window belonging to an app.
 struct WindowInfo: Identifiable {
@@ -39,7 +39,7 @@ final class WindowService {
     var fnUsableFrame: ((NSScreen) -> CGRect)?
 
     /// The window currently in front of all others on this desktop: the topmost
-    /// normal-level window, ignoring MacDock's own panels and tiny helper windows.
+    /// normal-level window, ignoring PerchDock's own panels and tiny helper windows.
     /// - Returns: Its window ID, or `nil` if only the desktop is showing.
     static func frontmostWindowId() -> CGWindowID? {
         guard let arrDictWindows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
@@ -216,7 +216,7 @@ final class WindowService {
         } ?? NSScreen.main
         guard let objHome else { return }
 
-        // Usable area: the visible frame minus MacDock's own strip when it's always shown.
+        // Usable area: the visible frame minus PerchDock's own strip when it's always shown.
         let fnUsable = fnUsableFrame ?? { $0.visibleFrame }
         let objTarget: CGRect
         switch enmTile {

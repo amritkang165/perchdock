@@ -15,7 +15,7 @@ final class MouseMonitor {
     var onMove: ((CGPoint) -> Void)?
 
     /// Starts listening. Global monitors see events sent to other apps; the local
-    /// monitor covers events delivered to MacDock's own panels.
+    /// monitor covers events delivered to PerchDock's own panels.
     func start() {
         let objMask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
 

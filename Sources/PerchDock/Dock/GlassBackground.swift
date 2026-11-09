@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// How MacDock's surfaces (dock, previews, folder grids, labels) are rendered.
+/// How PerchDock's surfaces (dock, previews, folder grids, labels) are rendered.
 enum GlassStyle: String, CaseIterable, Identifiable {
     /// Liquid Glass: refracts and blurs what's behind (frosted material before macOS 26).
     case liquid
@@ -71,7 +71,7 @@ struct GlassBackground: ViewModifier {
 }
 
 extension View {
-    /// Applies MacDock's glass background.
+    /// Applies PerchDock's glass background.
     /// - Parameters:
     ///   - fltCornerRadius: Corner radius of the glass shape.
     ///   - objTint: Optional color wash.
