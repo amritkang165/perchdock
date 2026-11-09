@@ -82,6 +82,12 @@ scripts/build.sh --install
 
 `scripts/build.sh` creates a local signing identity the first time it runs, so the macOS permissions you grant survive rebuilds. To make a drag-to-install DMG in `dist/`, run `scripts/release.sh`.
 
+To run the unit tests (dock layout, live icon clock hands, menu matching, settings migration):
+
+```bash
+xcodebuild -project PerchDock.xcodeproj -scheme PerchDock -derivedDataPath build.noindex test
+```
+
 ## First launch: permissions
 
 PerchDock asks for a few permissions so it can do what the built-in Dock does. Grant them in **System Settings → Privacy & Security**.
@@ -145,9 +151,10 @@ Sources/PerchDock/
   Services/       App tracking, window control, Now Playing, badges, native Dock menus
   Settings/       Settings storage, the Settings window and the quick-settings menu
   WindowPicker/   Window thumbnail capture and the preview panel
+Tests/PerchDockTests/  Unit tests (Swift Testing)
 scripts/          Build, release, signing setup and native Dock restore
 project.yml       XcodeGen project definition (the .xcodeproj is generated)
-.github/          CI: builds Debug and Release on every pull request and push to main
+.github/          CI: builds Debug and Release and runs the unit tests on every pull request and push to main
 ```
 
 ## License

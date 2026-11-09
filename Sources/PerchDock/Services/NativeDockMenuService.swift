@@ -183,7 +183,7 @@ enum NativeDockMenuService {
     ///   - strMenuTitle: Title from the Dock menu.
     ///   - strWindowTitle: A window's full title.
     /// - Returns: `true` on an exact, prefix or truncated match.
-    private static func matches(_ strMenuTitle: String, strWindowTitle: String) -> Bool {
+    static func matches(_ strMenuTitle: String, strWindowTitle: String) -> Bool {
         guard !strWindowTitle.isEmpty else { return false }
         if strMenuTitle == strWindowTitle { return true }
         let arrStrParts = strMenuTitle.components(separatedBy: "…")

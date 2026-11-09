@@ -21,6 +21,10 @@ targets:
       - path: Sources/PerchDock
     dependencies:
       - package: Sparkle
+    # `xcodebuild test -scheme PerchDock` runs the unit tests.
+    scheme:
+      testTargets:
+        - PerchDockTests
     info:
       path: Sources/PerchDock/Resources/Info.plist
       properties:
@@ -62,3 +66,20 @@ targets:
         # validation rejects Xcode's separate debug dylib; link it statically.
         ENABLE_DEBUG_DYLIB: NO
         GENERATE_INFOPLIST_FILE: NO
+  # Unit tests (Swift Testing). They run inside PerchDock, which skips its normal
+  # startup while hosting tests (see AppDelegate.blnIsHostingTests).
+  PerchDockTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/PerchDockTests
+    dependencies:
+      - target: PerchDock
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.slynck.perchdock.tests
+        GENERATE_INFOPLIST_FILE: YES
+        # Same identity as the app, so the hardened app accepts the test bundle.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "PerchDock Local Signing"
+        OTHER_CODE_SIGN_FLAGS: "--keychain $(HOME)/Library/Keychains/perchdock-signing.keychain-db"

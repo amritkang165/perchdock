@@ -1,4 +1,4 @@
-# Builds PerchDock on every pull request and every push to main.
+# Builds PerchDock (and runs its unit tests) on every pull request and every push to main.
 # Signing is turned off: the local "PerchDock Local Signing" identity only exists
 # on the developer's Mac, and CI only needs to prove the app compiles.
 name: CI
@@ -66,12 +66,34 @@ jobs:
           grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" build.log || true
           exit $intStatus
 
-      - name: Upload build log
+      # The test bundle is loaded into the app, so both must be signed by the same
+      # identity: ad-hoc ("-") signing works without any certificate on the runner.
+      - name: Test
+        if: matrix.configuration == 'Debug'
+        run: |
+          intStatus=0
+          xcodebuild \
+            -project PerchDock.xcodeproj \
+            -scheme PerchDock \
+            -destination 'platform=macOS' \
+            -derivedDataPath build.noindex \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            OTHER_CODE_SIGN_FLAGS= \
+            test > test.log 2>&1 || intStatus=$?
+          # Show each failed expectation and the overall result.
+          grep -E "error:|✘|Test run with|TEST (SUCCEEDED|FAILED)" test.log || true
+          exit $intStatus
+
+      - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log-${{ matrix.configuration }}
-          path: build.log
+          name: logs-${{ matrix.configuration }}
+          path: |
+            build.log
+            test.log
+          if-no-files-found: ignore
 
       # Unsigned app for quick testing on your own Mac (right-click → Open the first time).
       - name: Package app

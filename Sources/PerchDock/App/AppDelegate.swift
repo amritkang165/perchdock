@@ -4,7 +4,17 @@ import os
 /// Owns the app's long-lived services and the menu bar status item.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    /// True when the app is only hosting unit tests: it must not hide the Dock, show
+    /// windows, ask for permissions or touch the user's real settings.
+    static let blnIsHostingTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
     private let objSettings: SettingsStore = {
+        if AppDelegate.blnIsHostingTests {
+            // Throwaway settings, wiped on every test run.
+            let objTestDefaults = UserDefaults(suiteName: "com.slynck.perchdock.test-host")!
+            objTestDefaults.removePersistentDomain(forName: "com.slynck.perchdock.test-host")
+            return SettingsStore(objDefaults: objTestDefaults)
+        }
         // Settings must be carried over from the old name before SettingsStore reads them.
         LegacyDefaultsMigration.run()
         return SettingsStore()
@@ -29,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Boots services, reconciles native Dock state, and shows the dock panel.
     /// - Parameter notification: Launch notification (unused).
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !Self.blnIsHostingTests else { return }
         // Ask for Accessibility up front; window listing/raising needs it.
         AccessibilityPermission.requestIfNeeded()
         // Previews need Screen Recording; ask early since macOS applies it only after a relaunch.
@@ -174,6 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Restores the native Dock on a normal quit so the user is never left without one.
     /// - Parameter notification: Termination notification (unused).
     func applicationWillTerminate(_ notification: Notification) {
+        guard !Self.blnIsHostingTests else { return }
         objNowPlaying.stop()
         if objNativeDock.blnIsHiddenByUs {
             objNativeDock.restore()

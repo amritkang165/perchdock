@@ -15,6 +15,20 @@ enum LiveIcons {
         setStrSupported.contains(strBundleId)
     }
 
+    /// How far round the dial each clock hand points, as a fraction of a full turn
+    /// (0 = 12 o'clock). Hour and minute hands move smoothly between marks.
+    /// - Parameters:
+    ///   - objDate: Time to show.
+    ///   - objCalendar: Calendar (and time zone) to read the time in.
+    /// - Returns: Turns for the hour, minute and second hands, each in 0..<1.
+    static func clockHandTurns(for objDate: Date, objCalendar: Calendar = .current) -> (dblHour: Double, dblMinute: Double, dblSecond: Double) {
+        let objParts = objCalendar.dateComponents([.hour, .minute, .second], from: objDate)
+        let dblSecond = Double(objParts.second ?? 0)
+        let dblMinute = Double(objParts.minute ?? 0) + dblSecond / 60
+        let dblHour = Double((objParts.hour ?? 0) % 12) + dblMinute / 60
+        return (dblHour / 12, dblMinute / 60, dblSecond / 60)
+    }
+
     /// Calendar's bundle ID, whose still icon (used in group tiles, grids and menus)
     /// also shows today's date.
     static let strCalendarBundleId = "com.apple.iCal"
@@ -150,11 +164,7 @@ private struct LiveClockIcon: View {
                            at: objPoint)
         }
 
-        // Hand angles from the current time (hour and minute move smoothly).
-        let objParts = Calendar.current.dateComponents([.hour, .minute, .second], from: objDate)
-        let dblSecond = Double(objParts.second ?? 0)
-        let dblMinute = Double(objParts.minute ?? 0) + dblSecond / 60
-        let dblHour = Double((objParts.hour ?? 0) % 12) + dblMinute / 60
+        let objTurns = LiveIcons.clockHandTurns(for: objDate)
 
         /// Strokes one hand from just behind the center out to the given length.
         func hand(_ dblTurns: Double, fltLength: CGFloat, fltTail: CGFloat, fltWidth: CGFloat, objColor: Color) {
@@ -167,9 +177,9 @@ private struct LiveClockIcon: View {
         }
         let objWhite = Color(white: 0.96)
         let objOrange = Color(red: 1, green: 0.62, blue: 0.04)
-        hand(dblHour / 12, fltLength: fltSide * 0.25, fltTail: 0, fltWidth: fltSide * 0.05, objColor: objWhite)
-        hand(dblMinute / 60, fltLength: fltSide * 0.4, fltTail: 0, fltWidth: fltSide * 0.05, objColor: objWhite)
-        hand(dblSecond / 60, fltLength: fltSide * 0.38, fltTail: fltSide * 0.07, fltWidth: fltSide * 0.016, objColor: objOrange)
+        hand(objTurns.dblHour, fltLength: fltSide * 0.25, fltTail: 0, fltWidth: fltSide * 0.05, objColor: objWhite)
+        hand(objTurns.dblMinute, fltLength: fltSide * 0.4, fltTail: 0, fltWidth: fltSide * 0.05, objColor: objWhite)
+        hand(objTurns.dblSecond, fltLength: fltSide * 0.38, fltTail: fltSide * 0.07, fltWidth: fltSide * 0.016, objColor: objOrange)
 
         // Center cap: white ring, orange disc, dark pin.
         let fltCap = fltSide * 0.04

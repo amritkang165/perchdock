@@ -265,7 +265,8 @@ final class SettingsStore {
         "com.apple.systempreferences",
     ]
 
-    @ObservationIgnored private let objDefaults = UserDefaults.standard
+    /// Where settings are saved (the app's own defaults, or a throwaway store in tests).
+    @ObservationIgnored private let objDefaults: UserDefaults
 
     /// Icon edge length in points (32–96).
     var fltIconSize: Double { didSet { objDefaults.set(fltIconSize, forKey: Key.strIconSize) } }
@@ -400,7 +401,9 @@ final class SettingsStore {
     }
 
     /// Loads saved preferences, falling back to defaults.
-    init() {
+    /// - Parameter objDefaults: Where settings are read from and saved to.
+    init(objDefaults: UserDefaults = .standard) {
+        self.objDefaults = objDefaults
         objDefaults.register(defaults: [
             Key.strIconSize: 52.0,
             Key.strMagnificationOn: true,

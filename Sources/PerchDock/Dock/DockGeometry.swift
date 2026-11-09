@@ -53,6 +53,25 @@ struct DockGeometry {
         arrBlnWide = arrObjItems.map { blnLarge && $0.enmWidget == .nowPlaying }
     }
 
+    /// Builds geometry from explicit values (used by tests, and anywhere without settings).
+    /// - Parameters:
+    ///   - enmPosition: Screen edge.
+    ///   - fltIconSize: Base icon size.
+    ///   - fltMagnification: Peak magnification (1 = off).
+    ///   - blnCompact: Tighter spacing.
+    ///   - arrBlnDivider: Which items are dividers; its count is the item count.
+    ///   - arrBlnWide: Which items are wide tiles (defaults to none).
+    init(enmPosition: DockPosition, fltIconSize: CGFloat, fltMagnification: CGFloat,
+         blnCompact: Bool = false, arrBlnDivider: [Bool], arrBlnWide: [Bool]? = nil) {
+        self.enmPosition = enmPosition
+        self.fltIconSize = fltIconSize
+        self.fltMagnification = fltMagnification
+        self.blnCompact = blnCompact
+        intCount = arrBlnDivider.count
+        self.arrBlnDivider = arrBlnDivider
+        self.arrBlnWide = arrBlnWide ?? Array(repeating: false, count: arrBlnDivider.count)
+    }
+
     // MARK: - Dimensions
 
     private var fltSpacingRatio: CGFloat { blnCompact ? 0.06 : 0.15 }
