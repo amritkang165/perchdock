@@ -30,7 +30,7 @@ targets:
         LSMinimumSystemVersion: "15.0"
         # Agent app: no icon in the native Dock and no menu bar of its own.
         LSUIElement: true
-        NSAppleEventsUsageDescription: MacDock asks Finder to empty the Trash.
+        NSAppleEventsUsageDescription: MacDock asks Finder to empty the Trash, and asks Spotify for the current song's cover art.
         # Sparkle: set both (see scripts/release.sh) to turn on "Check for Updates".
         SUFeedURL: ""
         SUPublicEDKey: ""
