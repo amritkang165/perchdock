@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Built-in Dock stuck hidden?
+    url: https://github.com/slynck/perchdock#what-happens-to-the-built-in-dock
+    about: How to bring the macOS Dock back if PerchDock was force-quit.
+  - name: Report a security vulnerability
+    url: https://github.com/slynck/perchdock/security/advisories/new
+    about: Please report security issues privately, not as a public issue.

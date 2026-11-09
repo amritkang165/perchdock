@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest something PerchDock should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the problem or workflow, not just the solution. "I keep losing track of which Chrome window has my email" is more useful than "add window titles".
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like PerchDock to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: How do you handle this today?
+      description: Another app, a workaround, or the built-in Dock's behavior.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to help build this

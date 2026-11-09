@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in PerchDock doesn't work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. If the built-in Dock is stuck hidden, run `scripts/restore-native-dock.sh` (or the commands in the README) first.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Screenshots or a screen recording help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Put the dock on the left
+        2. Hover Safari
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: perchdock-version
+    attributes:
+      label: PerchDock version
+      description: Menu bar icon → About PerchDock.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "macOS 26.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: mac
+    attributes:
+      label: Mac
+      options:
+        - Apple silicon
+        - Intel
+    validations:
+      required: true
+  - type: dropdown
+    id: position
+    attributes:
+      label: Dock position
+      options:
+        - Bottom
+        - Left
+        - Right
+  - type: checkboxes
+    id: setup
+    attributes:
+      label: Setup
+      options:
+        - label: More than one display is connected
+        - label: Auto-hide is on
+        - label: Screen Recording permission is granted
+  - type: textarea
+    id: logs
+    attributes:
+      label: Crash report or logs
+      description: If PerchDock crashed, paste the crash report from Console.app → Crash Reports.
+      render: text

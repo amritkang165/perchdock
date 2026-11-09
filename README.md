@@ -2,20 +2,56 @@
   <img src="docs/images/icon.png" alt="PerchDock app icon" width="128">
 </p>
 
-# PerchDock
-
-[![CI](https://github.com/slynck/perchdock/actions/workflows/ci.yml/badge.svg)](https://github.com/slynck/perchdock/actions/workflows/ci.yml)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-
-A faster, smarter Dock for macOS, with live window previews, app groups, a built-in music player and Liquid Glass styling. PerchDock takes over from the built-in Dock while it runs, and hands control back the moment you quit.
+<h1 align="center">PerchDock</h1>
 
 <p align="center">
-  <img src="docs/images/dock-bottom.png" alt="PerchDock at the bottom of the screen with app groups, Downloads and the Now Playing widget" width="720">
+  <b>A free, open-source replacement for the macOS Dock with live window previews, app groups, a built-in music player and Liquid Glass styling.</b>
 </p>
+
+<p align="center">
+  <a href="https://github.com/slynck/perchdock/releases/latest"><img src="https://img.shields.io/badge/Download-macOS%2015%2B-black?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS 15 or later"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/slynck/perchdock/releases/latest"><img src="https://img.shields.io/github/v/release/slynck/perchdock?label=release" alt="Latest release"></a>
+  <a href="https://github.com/slynck/perchdock/releases"><img src="https://img.shields.io/github/downloads/slynck/perchdock/total?label=downloads" alt="Total downloads"></a>
+  <a href="https://github.com/slynck/perchdock/actions/workflows/ci.yml"><img src="https://github.com/slynck/perchdock/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white" alt="Swift 6">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License: GPL-3.0"></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/dock-bottom.png" alt="PerchDock at the bottom of the screen with app groups, Downloads and the Now Playing widget" width="820">
+</p>
+
+PerchDock takes over from the built-in Dock while it runs and hands control back the moment you quit. It doesn't modify macOS, so there's nothing to undo.
+
+## Quick start
+
+1. **[Download the latest DMG](https://github.com/slynck/perchdock/releases/latest)**, open it and drag **PerchDock** into **Applications**.
+2. Releases aren't notarized by Apple yet, so clear the download quarantine once:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/PerchDock.app && open /Applications/PerchDock.app
+   ```
+3. Grant **Accessibility** when asked (and **Screen Recording** if you want live window thumbnails). Your new dock appears straight away.
+
+Prefer clicking? See [Install](#install) for the System Settings route, or [build it from source](#build-from-source).
 
 ## Why PerchDock
 
 The built-in Dock shows one icon per app and little else. PerchDock keeps everything you're used to (clicking, dragging, badges, bouncing, right-click menus, hot corners) and adds the things people install three separate utilities for.
+
+| | Built-in Dock | PerchDock |
+| --- | :---: | :---: |
+| Live window previews on hover | | ✓ |
+| Click an app repeatedly to cycle its windows | | ✓ |
+| Group several apps into one tile | | ✓ |
+| Music player with cover art and controls | | ✓ |
+| Tile windows to halves and quarters from the dock | | ✓ |
+| Liquid Glass, Clear Glass or Frosted, with adjustable transparency | | ✓ |
+| Dock on every display at once | | ✓ |
+| Badges, bounces, stacks, hot corners, app menu actions | ✓ | ✓ |
+| Left, bottom or right, with auto-hide and magnification | ✓ | ✓ |
 
 ### Windows
 
@@ -73,8 +109,8 @@ The built-in Dock shows one icon per app and little else. PerchDock keeps everyt
 You'll need Xcode 26 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
 
 ```bash
-git clone <this repository>
-cd <repository folder>
+git clone https://github.com/slynck/perchdock.git
+cd perchdock
 scripts/build.sh --install
 ```
 
@@ -154,10 +190,18 @@ Sources/PerchDock/
   Settings/       Settings storage, the Settings window and the quick-settings menu
   WindowPicker/   Window thumbnail capture and the preview panel
 Tests/PerchDockTests/  Unit tests (Swift Testing)
-scripts/          Build, release, signing setup and native Dock restore
+scripts/          Build, release, signing setup, native Dock restore, and README media (demo GIF, social preview)
 project.yml       XcodeGen project definition (the .xcodeproj is generated)
 .github/          CI (build and test every pull request) and the release workflow (a vX.Y.Z tag publishes a DMG)
 ```
+
+## Contributing
+
+Bug reports, feature ideas and pull requests are all welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), or pick up an issue labeled [`good first issue`](https://github.com/slynck/perchdock/labels/good%20first%20issue); each one says which files to look at.
+
+## Support PerchDock
+
+PerchDock is built in spare time. If it replaced your Dock, **[star the repository](https://github.com/slynck/perchdock)** so more Mac users can find it, and tell a friend who's still putting up with the built-in one.
 
 ## License
 
