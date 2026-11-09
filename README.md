@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/icon.png" alt="MacDock app icon" width="128">
+</p>
+
 # MacDock
 
 A faster, smarter Dock for macOS, with live window previews, app groups, a built-in music player and Liquid Glass styling. MacDock takes over from the built-in Dock while it runs, and hands control back the moment you quit.
