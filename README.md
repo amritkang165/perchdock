@@ -27,6 +27,7 @@ The built-in Dock shows one icon per app and little else. PerchDock keeps everyt
 - **App groups.** Put several apps into one colored tile (right-click an app, then **New Group** or **Add to Group**). Hovering a group fans out its apps, and works in every dock position.
 - **Dividers and folder stacks.** Add a divider anywhere, or pin any folder. Downloads and the Trash are built in.
 - **Badges, bounces and new-window markers** behave like the built-in Dock.
+- **Live icons.** Calendar shows today's date, even inside a group, and Clock's hands keep time.
 
 ### Widgets
 
@@ -128,7 +129,7 @@ killall Dock
 
 ## Known limitations
 
-- Dock icons are static. Apps that animate their built-in Dock icon, such as Calendar's date or Activity Monitor's graphs, show their regular icon.
+- Only Calendar and Clock have live icons, which PerchDock draws itself. Other apps that animate their own Dock icon, such as Activity Monitor's graphs, show their regular icon, because macOS doesn't let another app read those.
 - The Now Playing widget relies on a private macOS framework, so a future macOS update could break it until PerchDock is updated. PerchDock isn't eligible for the Mac App Store for the same reason.
 - Builds made on your own Mac are signed with a local certificate and only run on that Mac. Sharing builds with other people needs an Apple Developer ID and notarization.
 

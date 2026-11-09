@@ -124,6 +124,11 @@ final class AppTracker {
     @ObservationIgnored private let objMinimized = MinimizedWindowService()
     @ObservationIgnored private var arrObjObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var dictObjIconCache: [String: NSImage] = [:]
+    /// Today's Calendar icon and the day it was drawn for (redrawn when the date changes).
+    @ObservationIgnored private var objCalendarIcon: NSImage?
+    @ObservationIgnored private var strCalendarIconDay: String?
+    /// Observer that rebuilds the list at midnight.
+    @ObservationIgnored private var objDayChangeToken: NSObjectProtocol?
     @ObservationIgnored private var blnTrashWasFull: Bool?
     /// Order the user dragged running (unpinned) apps into, for this session.
     @ObservationIgnored private var arrStrRunningOrder: [String] = []
@@ -375,6 +380,11 @@ final class AppTracker {
             arrObjObservers.append(objToken)
         }
 
+        // New day: rebuild so the Calendar icon in group tiles shows the new date.
+        objDayChangeToken = NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.rebuild() }
+        }
+
         objMinimized.onChange = { [weak self] in
             self?.rebuild()
         }
@@ -611,6 +621,15 @@ final class AppTracker {
     ///   - objRunningApp: Running instance, used as a fallback icon source.
     /// - Returns: The app's icon image.
     private func icon(strBundleId: String, objAppUrl: URL?, objRunningApp: NSRunningApplication?) -> NSImage {
+        // Calendar shows today's date everywhere, including group tiles and grids.
+        if strBundleId == LiveIcons.strCalendarBundleId {
+            let strToday = Date().formatted(date: .numeric, time: .omitted)
+            if strCalendarIconDay != strToday {
+                objCalendarIcon = LiveIcons.calendarImage()
+                strCalendarIconDay = strToday
+            }
+            if let objCalendarIcon { return objCalendarIcon }
+        }
         if let objCached = dictObjIconCache[strBundleId] {
             return objCached
         }

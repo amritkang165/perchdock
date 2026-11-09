@@ -28,6 +28,8 @@ extension EnvironmentValues {
 /// One dock icon with its notification badge, progress bar and bounces.
 private struct DockIconView: View {
     let objIcon: NSImage
+    /// App the icon belongs to; Calendar and Clock get a live icon instead of `objIcon`.
+    let strBundleId: String
     let fltSize: CGFloat
     let strBadge: String?
     let fltProgress: Double?
@@ -38,10 +40,7 @@ private struct DockIconView: View {
     let objBounceDirection: CGVector
 
     var body: some View {
-        Image(nsImage: objIcon)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: fltSize, height: fltSize)
+        iconContent
             .overlay(alignment: .topTrailing) {
                 if let strBadge {
                     badge(strBadge)
@@ -64,6 +63,19 @@ private struct DockIconView: View {
                 }
             }
             .modifier(LaunchBounce(blnActive: blnLaunching, fltHeight: fltBounceHeight, objDirection: objBounceDirection))
+    }
+
+    /// The live icon for apps that have one, otherwise the app's regular icon.
+    @ViewBuilder
+    private var iconContent: some View {
+        if LiveIcons.supports(strBundleId) {
+            LiveIconView(strBundleId: strBundleId, fltSize: fltSize)
+        } else {
+            Image(nsImage: objIcon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: fltSize, height: fltSize)
+        }
     }
 
     /// Red capsule with the badge text, scaled to the icon.
@@ -199,6 +211,7 @@ struct DockView: View {
                 } else {
                     DockIconView(
                         objIcon: objItem.objIcon,
+                        strBundleId: objItem.strBundleId,
                         fltSize: fltSize,
                         strBadge: objBadges.dictStrBadges[objItem.strBundleId],
                         fltProgress: objBadges.dictFltProgress[objItem.strBundleId],
