@@ -11,6 +11,9 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 
+# Private launch notes and drafts
+.launch/
+
 # Release artifacts (scripts/release.sh)
 dist/
 *.dmg
