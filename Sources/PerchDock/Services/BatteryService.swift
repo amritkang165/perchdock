@@ -83,8 +83,22 @@ final class BatteryService {
         onChange?()
     }
 
-    /// Short status, e.g. "Battery 82% — Charging (1:05 until full)".
+    /// Short battery status using the user's locale for its duration.
     var strSummary: String {
+        Self.summary(intPercent: intPercent, blnIsCharging: blnIsCharging,
+                     blnIsPluggedIn: blnIsPluggedIn, intMinutesRemaining: intMinutesRemaining)
+    }
+
+    /// Formats a battery status without reading the power source.
+    /// - Parameters:
+    ///   - intPercent: Charge, 0...100.
+    ///   - blnIsCharging: Whether the battery is charging.
+    ///   - blnIsPluggedIn: Whether external power is connected.
+    ///   - intMinutesRemaining: Minutes until full or empty, or nil when unknown.
+    ///   - objLocale: Locale for the duration, defaulting to the user's current locale.
+    /// - Returns: The battery tooltip text.
+    static func summary(intPercent: Int, blnIsCharging: Bool, blnIsPluggedIn: Bool,
+                        intMinutesRemaining: Int?, objLocale: Locale = .current) -> String {
         var strText = "Battery \(intPercent)%"
         if blnIsCharging {
             strText += " — Charging"
@@ -92,7 +106,9 @@ final class BatteryService {
             strText += " — Plugged In"
         }
         if let intMinutesRemaining {
-            let strTime = "\(intMinutesRemaining / 60):" + String(format: "%02d", intMinutesRemaining % 60)
+            let strTime = Duration.seconds(intMinutesRemaining * 60).formatted(
+                .units(allowed: [.hours, .minutes], width: .abbreviated).locale(objLocale)
+            )
             strText += blnIsCharging ? " (\(strTime) until full)" : " (\(strTime) left)"
         }
         return strText
